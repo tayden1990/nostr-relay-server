@@ -23,12 +23,13 @@ jobs:
       - name: Read package version
         id: pkg
         run: |
-          node -e "const v=require('./package.json').version; require('fs').appendFileSync(process.env.GITHUB_OUTPUT, `version=${v}\n`)"
-          echo "version=${{ steps.pkg.outputs.version }}" >> "$GITHUB_OUTPUT"
+          node -e "const v=require('./package.json').version; require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'version=' + v + '\n')"
 
       - name: Build date (UTC)
         id: now
-        run: echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+        shell: bash
+        run: |
+          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Docker meta
         id: meta
