@@ -6,7 +6,7 @@
   "scripts": {
     "start": "ts-node src/app.ts",
     "build": "tsc",
-    "test": "jest",
+    "test": "jest --runInBand",
     "migrate": "ts-node scripts/migrate.ts",
     "seed": "ts-node scripts/seed.ts"
   },
@@ -37,9 +37,33 @@
     "ts-jest": "^29.2.5",
     "@types/jest": "^29.5.12"
   },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/tests/**/*.test.ts",
+      "**/tests/**/*.spec.ts"
+    ],
+    "moduleFileExtensions": [
+      "ts",
+      "js",
+      "json"
+    ],
+    "roots": [
+      "<rootDir>"
+    ],
+    "transform": {
+      "^.+\\.ts$": [
+        "ts-jest",
+        {
+          "tsconfig": "<rootDir>/tsconfig.json"
+        }
+      ]
+    }
+  },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yourusername/nostr-relay-server.git"
+    "url": "git+https://github.com/tayden1990/nostr-relay-server.git"
   },
   "keywords": [
     "nostr",
@@ -51,7 +75,7 @@
   "author": "Your Name",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/yourusername/nostr-relay-server/issues"
+    "url": "https://github.com/tayden1990/nostr-relay-server/issues"
   },
-  "homepage": "https://github.com/yourusername/nostr-relay-server#readme"
+  "homepage": "https://github.com/tayden1990/nostr-relay-server#readme"
 }
