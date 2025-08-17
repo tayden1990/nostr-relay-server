@@ -1,0 +1,27 @@
+{
+	# optional global options
+	auto_https off
+}
+
+:80 {
+	encode gzip
+	@websocket {
+		header Connection *Upgrade*
+		header Upgrade websocket
+	}
+	reverse_proxy @websocket nostr-relay:8080
+	reverse_proxy /nip96* nip96:3001
+}
+
+# For production, replace relay.example.com with your domain and remove `tls internal`.
+:443, relay.example.com {
+	encode gzip
+	@websocket {
+		header Connection *Upgrade*
+		header Upgrade websocket
+	}
+	reverse_proxy @websocket nostr-relay:8080
+	reverse_proxy /nip96* nip96:3001
+	# For local/dev you can use internal CA; for production with a real domain, remove this line
+	tls internal
+}

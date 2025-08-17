@@ -1,0 +1,64 @@
+import express from 'express';
+import uploadsRouter from './uploads';
+import { LOCAL_STORAGE_DIR } from './storage/local';
+import { nip98Auth, ipAllowlist } from './auth';
+import { fileSizeLimitPolicy } from './policies';
+
+const app = express();
+
+// Upload protection: IP allowlist and optionally NIP-98 signed requests
+const requireNip98 = String(process.env.NIP98_REQUIRED ?? 'true').toLowerCase() !== 'false';
+if (requireNip98) {
+    app.use('/upload', ipAllowlist, nip98Auth);
+} else {
+    app.use('/upload', ipAllowlist);
+}
+
+// Policies
+app.use(fileSizeLimitPolicy as any);
+
+// Uploads
+app.use('/', uploadsRouter);
+
+// Static serving for local storage
+app.use('/media', express.static(LOCAL_STORAGE_DIR));
+
+// Health endpoint
+app.get('/health', (_req, res) => {
+    res.status(200).json({ status: 'ok', ts: new Date().toISOString() });
+});
+
+// Info endpoint (non-sensitive runtime info)
+app.get('/info', (_req, res) => {
+    const maxFileSize = Number(process.env.MAX_FILE_SIZE || 50 * 1024 * 1024);
+    const baseUrl = (process.env.BASE_URL || '').trim();
+    const method = (process.env.STORAGE_METHOD || process.env.STORAGE_TYPE || 'local').toLowerCase();
+    const region = process.env.AWS_REGION || '';
+    const bucket = process.env.S3_BUCKET_NAME || '';
+    res.status(200).json({
+        storage: {
+            method,
+            baseUrl,
+            localDir: LOCAL_STORAGE_DIR,
+            s3: {
+                region: region || undefined,
+                bucket: bucket || undefined,
+                configured: method === 's3' && Boolean(bucket),
+            },
+        },
+        limits: {
+            maxFileSize,
+        },
+        auth: {
+            nip98Required: requireNip98,
+        },
+        ts: new Date().toISOString(),
+    });
+});
+
+// Start the server
+const PORT = Number(process.env.PORT || 3001);
+app.listen(PORT, () => {
+    // eslint-disable-next-line no-console
+    console.log(`NIP-96 File Storage Service running on port ${PORT}`);
+});

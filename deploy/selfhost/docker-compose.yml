@@ -1,0 +1,47 @@
+version: "3.8"
+
+services:
+  relay:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+      - DATABASE_URL=postgres://user:password@postgres:5432/nostr
+      - REDIS_URL=redis://redis:6379
+    expose:
+      - "8080"
+    depends_on:
+      - postgres
+      - redis
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data/caddy:/data
+      - ./config/caddy:/config
+    depends_on:
+      - relay
+
+  postgres:
+    image: postgres:13
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: nostr
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+
+  redis:
+    image: redis:6
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ./data/redis:/data

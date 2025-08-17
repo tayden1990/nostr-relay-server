@@ -1,0 +1,87 @@
+services:
+  nostr-relay:
+    build:
+      context: ../
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV}
+      PORT: ${PORT}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      MAX_MESSAGE_SIZE: ${MAX_MESSAGE_SIZE}
+      RELAY_NAME: ${RELAY_NAME}
+      RELAY_DESCRIPTION: ${RELAY_DESCRIPTION}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:${PORT:-8080}/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    expose:
+      - "8080"
+    depends_on:
+      - postgres
+      - redis
+
+  nip96:
+    build:
+      context: ../services/nip-96-file-storage
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: ${NIP96_PORT}
+      STORAGE_METHOD: ${STORAGE_METHOD}
+      MAX_FILE_SIZE: ${MAX_FILE_SIZE}
+      LOCAL_DIR: ${LOCAL_DIR}
+      BASE_URL: ${BASE_URL}
+      NIP98_REQUIRED: ${NIP98_REQUIRED}
+    expose:
+      - "3001"
+    volumes:
+      - nip96_uploads:/data/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:${NIP96_PORT:-3001}/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ../Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  postgres:
+    image: postgres:13
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: nostr
+    volumes:
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:6
+    restart: always
+    volumes:
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf
+      - redisdata:/data
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+
+volumes:
+  pgdata:
+  redisdata:
+  caddy_data:
+  caddy_config:
+  nip96_uploads:

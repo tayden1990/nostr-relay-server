@@ -1,0 +1,16 @@
+[info]
+name = "My Private Relay"
+description = "Self-hosted relay for my messenger"
+
+[limits]
+# Max WebSocket message size (bytes)
+max_ws_msg_bytes = 2097152 # 2MB
+# Max DB size, etc.
+max_event_bytes = 2097152
+
+[database]
+# Use default SQLite in /app
+
+[authorization]
+# Enable NIP-42 AUTH (set to true to require AUTH for writes)
+require_auth = false

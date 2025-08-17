@@ -1,0 +1,11 @@
+node_modules
+npm-debug.log
+.git
+.dist
+coverage
+**/*.spec.ts
+**/dist
+**/.env*
+**/.cache
+**/coverage
+.DS_Store

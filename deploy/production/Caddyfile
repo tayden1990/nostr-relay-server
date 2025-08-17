@@ -1,0 +1,10 @@
+relay1.matrus.org {
+  encode gzip
+  @websocket {
+    header Connection *Upgrade*
+    header Upgrade websocket
+  }
+  reverse_proxy @websocket relay:8080
+  reverse_proxy /upload nip96:3001
+  reverse_proxy /media/* nip96:3001
+}
