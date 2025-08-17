@@ -82,8 +82,8 @@ jobs:
             REPO_URL=https://github.com/${{ github.repository }}
 
       - name: Update Docker Hub description
-        if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
-        uses: crazy-max/ghaction-dockerhub-description@v3
+        if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' && hashFiles('README.md') != '' }}
+        uses: peter-evans/dockerhub-description@v4
         with:
           username: ${{ env.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN }}
