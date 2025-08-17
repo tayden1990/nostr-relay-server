@@ -1,62 +1,100 @@
 # Nostr Relay Server
 
-This repository contains a Nostr relay server implementation designed to facilitate communication between clients using the Nostr protocol. The server is built with TypeScript and provides various features to enhance message delivery, file handling, and overall performance.
+[![Build & Publish](https://github.com/tayden1990/nostr-relay-server/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/tayden1990/nostr-relay-server/actions)
+![Docker Pulls](https://img.shields.io/docker/pulls/taksa1990/nostr-relay)
+![Image Size](https://img.shields.io/docker/image-size/taksa1990/nostr-relay/latest)
+
+A production-ready Nostr relay server written in TypeScript. It implements core NIPs, stores events in Postgres, uses Redis for fan-out, and offers optional NIP-96 HTTP file storage.
 
 ## Features
 
-- **WebSocket and HTTP Support**: The server supports both WebSocket and HTTP protocols for client communication.
-- **Event Processing**: Implements multiple NIP (Nostr Improvement Proposals) for handling events according to the Nostr protocol.
-- **Authentication**: Secure WebSocket connections with authentication mechanisms.
-- **Rate Limiting**: Policies to prevent abuse by limiting the rate of incoming requests.
-- **File Storage**: Supports file uploads with size limits and retention policies, utilizing both local and S3 storage options.
-- **Real-time Delivery**: Uses Redis for real-time event delivery and caching.
+- WebSocket and HTTP endpoints
+- NIP-11 relay info with supported NIPs
+- Postgres storage with replaceable and parameterized replaceable handling
+- NIP-09 deletion, NIP-40 expiration, and ephemeral non-persistence
+- Redis pub/sub for real-time delivery
+- Optional NIP-96 file storage microservice (local or S3)
+- Prometheus metrics
 
-## Getting Started
+## Supported NIPs
 
-### Prerequisites
+1, 2, 4, 5, 9, 10, 11, 13, 17, 18, 19, 21, 23, 25, 27, 28, 29, 30, 33, 40, 42, 44, 47, 51, 57, 58, 59, 65, 78, 96, 98
 
-- Node.js (version 14 or higher)
-- PostgreSQL
-- Redis
+## Quickstart (Docker)
 
-### Installation
-
-1. Clone the repository:
-   ```
-   git clone https://github.com/yourusername/nostr-relay-server.git
-   cd nostr-relay-server
-   ```
-
-2. Install dependencies:
-   ```
-   npm install
-   ```
-
-3. Set up the database:
-   - Create a PostgreSQL database and user.
-   - Run the migration scripts located in `src/storage/postgres/migrations/`.
-
-4. Configure the server:
-   - Update the configuration files in the `src/config` directory as needed.
-
-### Running the Server
-
-To start the server, run:
+```bash
+docker pull taksa1990/nostr-relay:latest
+docker run --rm -p 8080:8080 \
+  -e DATABASE_URL="postgres://user:password@host:5432/nostr" \
+  -e REDIS_URL="redis://host:6379" \
+  taksa1990/nostr-relay:latest
 ```
+
+Health and info:
+- Health: GET http://localhost:8080/health
+- NIP-11: GET http://localhost:8080/.well-known/nostr.json
+
+## Docker Compose (with NIP-96)
+
+See docker/docker-compose.yml for a full stack (Relay + Postgres + Redis + Caddy + NIP-96).
+Basic example:
+
+```yaml
+services:
+  nostr-relay:
+    image: taksa1990/nostr-relay:latest
+    environment:
+      - DATABASE_URL=postgres://user:password@postgres:5432/nostr
+      - REDIS_URL=redis://redis:6379
+    ports: ["8080:8080"]
+    depends_on: [postgres, redis]
+
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: nostr
+
+  redis:
+    image: redis:6
+```
+
+## Configuration
+
+Common environment variables:
+- PORT: default 8080
+- DATABASE_URL: Postgres connection string
+- REDIS_URL: Redis connection string
+- MAX_MESSAGE_SIZE: default 1048576
+- RELAY_NAME, RELAY_DESCRIPTION: for NIP-11
+
+NIP-96 service (optional):
+- PORT: default 3001
+- STORAGE_METHOD: local or s3
+- BASE_URL: prefix/origin for returned links
+- MAX_FILE_SIZE: bytes (default 52428800)
+
+## Building locally
+
+```bash
+npm install
+npm run build
+npm test
 npm start
 ```
 
-### Testing
+## Image metadata
 
-To run the tests, use:
-```
-npm test
-```
-
-## Contributing
-
-Contributions are welcome! Please open an issue or submit a pull request for any enhancements or bug fixes.
+The published image contains OCI labels:
+- org.opencontainers.image.title
+- org.opencontainers.image.description
+- org.opencontainers.image.version
+- org.opencontainers.image.revision
+- org.opencontainers.image.url
+- org.opencontainers.image.source
+- org.opencontainers.image.licenses
 
 ## License
 
-This project is licensed under the MIT License. See the LICENSE file for details.
+MIT

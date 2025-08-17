@@ -18,6 +18,20 @@ RUN npm run build
 FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production PORT=8080
+# OCI metadata (provided via build args from CI)
+ARG VCS_REF
+ARG BUILD_DATE
+ARG VERSION=1.0.0
+ARG REPO_URL="https://github.com/tayden1990/nostr-relay-server"
+LABEL org.opencontainers.image.title="Nostr Relay Server" \
+      org.opencontainers.image.description="A Nostr relay server supporting many NIPs, with Postgres + Redis and optional NIP-96 file storage." \
+      org.opencontainers.image.url="${REPO_URL}" \
+      org.opencontainers.image.source="${REPO_URL}" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.vendor="tayden1990"
 # app artifacts
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/package.json ./package.json
