@@ -1,9 +1,11 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* yarn.lock* pnpm-lock.yaml* ./
+# Prefer yarn/pnpm when lockfiles exist; otherwise use npm ci if package-lock.json exists; fall back to npm install.
 RUN if [ -f yarn.lock ]; then yarn --frozen-lockfile; \
     elif [ -f pnpm-lock.yaml ]; then corepack enable && pnpm i --frozen-lockfile; \
-    else npm ci; fi
+    elif [ -f package-lock.json ]; then npm ci || npm install; \
+    else npm install; fi
 
 FROM node:20-alpine AS build
 WORKDIR /app
