@@ -1,8 +1,10 @@
 services:
   nostr-relay:
-    build:
-      context: ../
-      dockerfile: Dockerfile
+    # Use the published image; comment this and uncomment build if you want local build
+    image: taksa1990/nostr-relay:latest
+    # build:
+    #   context: ../
+    #   dockerfile: Dockerfile
     restart: unless-stopped
     environment:
       NODE_ENV: ${NODE_ENV}
@@ -18,8 +20,13 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+    # Expose for internal reverse proxy (Caddy)
     expose:
       - "8080"
+    # Publish to host only when running with the "direct" profile (no Caddy)
+    profiles: ["direct"]
+    ports:
+      - "8080:8080"
     depends_on:
       - postgres
       - redis

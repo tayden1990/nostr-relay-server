@@ -57,21 +57,46 @@ export async function createServer() {
 
 // Start the server unless running tests
 const PORT = Number(process.env.PORT || 8080);
+const HOST = process.env.HOST || '0.0.0.0';
 if (process.env.NODE_ENV !== 'test') {
-    server.listen(PORT, () => {
-        console.log(`Relay server is running on http://0.0.0.0:${PORT}`);
+    server.listen(PORT, HOST, () => {
+        console.log(`Relay server is running on http://${HOST}:${PORT}`);
     });
 }
 
 // Background: scheduled cleanup of expired events every 10 minutes
+let repoForSweep: PostgresRepository | undefined;
+// Use platform-compatible interval return type (Node/JS)
+let sweepTimer: ReturnType<typeof setInterval> | undefined;
 if (process.env.DATABASE_URL) {
-    const repo = new PostgresRepository(process.env.DATABASE_URL);
+    repoForSweep = new PostgresRepository(process.env.DATABASE_URL);
     const sweep = async () => {
         try {
-            await (repo as any).pool.query('DELETE FROM nostr_events WHERE expires_at IS NOT NULL AND expires_at <= EXTRACT(EPOCH FROM NOW())');
+            await (repoForSweep as any).pool.query(
+                'DELETE FROM nostr_events WHERE expires_at IS NOT NULL AND expires_at <= EXTRACT(EPOCH FROM NOW())'
+            );
         } catch {
             // ignore errors
         }
     };
-    setInterval(sweep, 10 * 60 * 1000);
+    sweepTimer = setInterval(sweep, 10 * 60 * 1000);
 }
+
+// Graceful shutdown
+const shutdown = async (signal: string) => {
+    try {
+        console.log(`Received ${signal}, shutting down...`);
+        if (sweepTimer) clearInterval(sweepTimer);
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+        wss.close();
+        if (repoForSweep && typeof repoForSweep.close === 'function') {
+            await repoForSweep.close();
+        }
+    } catch (e) {
+        // ignore
+    } finally {
+        process.exit(0);
+    }
+};
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));

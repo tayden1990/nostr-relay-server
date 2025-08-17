@@ -1,7 +1,7 @@
 {
   "server": {
     "port": 8080,
-    "host": "localhost",
+    "host": "0.0.0.0",
     "protocol": "http",
     "websocket": {
       "port": 8081,
@@ -10,20 +10,20 @@
   },
   "database": {
     "postgres": {
-      "host": "localhost",
+      "host": "postgres",
       "port": 5432,
-      "username": "your_username",
-      "password": "your_password",
-      "database": "nostr_relay"
+      "username": "user",
+      "password": "password",
+      "database": "nostr"
     },
     "redis": {
-      "host": "localhost",
+      "host": "redis",
       "port": 6379
     }
   },
   "fileStorage": {
-    "maxFileSize": 10485760,  // 10 MB
-    "storageType": "local",  // options: local, s3
+    "maxFileSize": 10485760,
+    "storageType": "local",
     "s3": {
       "bucket": "your_bucket_name",
       "region": "your_region",
@@ -33,10 +33,10 @@
   },
   "rateLimiting": {
     "maxRequests": 100,
-    "windowMs": 60000  // 1 minute
+    "windowMs": 60000
   },
   "eventRetention": {
-    "maxAge": 604800  // 7 days in seconds
+    "maxAge": 604800
   },
   "logging": {
     "level": "info",

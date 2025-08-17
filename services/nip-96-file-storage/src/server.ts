@@ -5,6 +5,8 @@ import { nip98Auth, ipAllowlist } from './auth';
 import { fileSizeLimitPolicy } from './policies';
 
 const app = express();
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
 
 // Upload protection: IP allowlist and optionally NIP-98 signed requests
 const requireNip98 = String(process.env.NIP98_REQUIRED ?? 'true').toLowerCase() !== 'false';
