@@ -34,7 +34,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: false
-          tags: matrus/nostr-relay:test-build
+          tags: ${{ env.DOCKERHUB_USERNAME || 'local' }}/nostr-relay:test-build
 
       - name: Build and push
         if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
@@ -43,5 +43,5 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: matrus/nostr-relay:latest
+          tags: ${{ env.DOCKERHUB_USERNAME }}/nostr-relay:latest
           platforms: linux/amd64,linux/arm64

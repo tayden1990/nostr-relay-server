@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   relay:
-    image: matrus/nostr-relay:latest
+    image: taksa1990/nostr-relay:latest
     restart: unless-stopped
     environment:
       - NODE_ENV=production
