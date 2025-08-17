@@ -10,6 +10,8 @@ jobs:
     env:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      # Set DOCKERHUB_DESC_DISABLED=true in repo/env to skip description sync
+      DOCKERHUB_DESC_DISABLED: ${{ vars.DOCKERHUB_DESC_DISABLED }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -85,8 +87,9 @@ jobs:
             REPO_URL=https://github.com/${{ github.repository }}
 
       - name: Update Docker Hub description
-        if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' && hashFiles('README.md') != '' }}
+        if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' && hashFiles('README.md') != '' && env.DOCKERHUB_DESC_DISABLED != 'true' }}
         uses: peter-evans/dockerhub-description@v4
+        continue-on-error: true
         with:
           username: ${{ env.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN }}
