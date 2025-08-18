@@ -3,14 +3,101 @@ import { Event } from '../../types';
 
 export class PostgresRepository {
     private pool: Pool;
+    // one-time bootstrap promise shared by all instances
+    private static initPromise: Promise<void> | null = null;
 
     constructor(connectionString: string) {
         this.pool = new Pool({
             connectionString,
         });
+        // kick off bootstrap once per process
+        if (!PostgresRepository.initPromise) {
+            PostgresRepository.initPromise = this.ensureSchema().catch(() => { /* leave errors to callers */ });
+        }
+    }
+
+    private async ready(): Promise<void> {
+        try {
+            await PostgresRepository.initPromise;
+        } catch {
+            // allow proceed; subsequent queries may still work if schema exists
+        }
+    }
+
+    // Create nostr_events table, helper columns, trigger and indexes if missing
+    private async ensureSchema(): Promise<void> {
+        const ddl = `
+        CREATE TABLE IF NOT EXISTS nostr_events (
+            id TEXT PRIMARY KEY,
+            kind INTEGER NOT NULL,
+            pubkey TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+            deleted BOOLEAN NOT NULL DEFAULT FALSE,
+            expires_at BIGINT NULL,
+            d_tag TEXT NULL
+        );
+
+        -- helper arrays for tag lookups
+        ALTER TABLE nostr_events
+          ADD COLUMN IF NOT EXISTS e_tags text[],
+          ADD COLUMN IF NOT EXISTS p_tags text[];
+
+        -- trigger to populate e_tags and p_tags
+        CREATE OR REPLACE FUNCTION nostr_events_update_tag_arrays()
+        RETURNS TRIGGER AS $$
+        BEGIN
+          NEW.e_tags := (
+            SELECT array_agg(elem->>1)
+            FROM jsonb_array_elements(NEW.tags) AS elem
+            WHERE elem->>0 = 'e'
+          );
+          NEW.p_tags := (
+            SELECT array_agg(elem->>1)
+            FROM jsonb_array_elements(NEW.tags) AS elem
+            WHERE elem->>0 = 'p'
+          );
+          RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+
+        DROP TRIGGER IF EXISTS nostr_events_set_tag_arrays ON nostr_events;
+        CREATE TRIGGER nostr_events_set_tag_arrays
+        BEFORE INSERT OR UPDATE OF tags ON nostr_events
+        FOR EACH ROW
+        EXECUTE FUNCTION nostr_events_update_tag_arrays();
+
+        -- helpful indexes
+        CREATE INDEX IF NOT EXISTS idx_nostr_events_pubkey ON nostr_events (pubkey);
+        CREATE INDEX IF NOT EXISTS idx_nostr_events_kind ON nostr_events (kind);
+        CREATE INDEX IF NOT EXISTS idx_nostr_events_created_at ON nostr_events (created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_nostr_events_pubkey_kind ON nostr_events (pubkey, kind);
+        CREATE INDEX IF NOT EXISTS idx_nostr_events_pubkey_kind_dtag ON nostr_events (pubkey, kind, d_tag);
+        CREATE INDEX IF NOT EXISTS idx_nostr_events_expires_at ON nostr_events (expires_at);
+        CREATE INDEX IF NOT EXISTS idx_nostr_events_tags_gin ON nostr_events USING GIN (tags jsonb_path_ops);
+        CREATE INDEX IF NOT EXISTS idx_events_e_tags_gin ON nostr_events USING GIN (e_tags);
+        CREATE INDEX IF NOT EXISTS idx_events_p_tags_gin ON nostr_events USING GIN (p_tags);
+
+        -- replaceable unique constraints (only apply to non-deleted rows)
+        CREATE UNIQUE INDEX IF NOT EXISTS uniq_replaceable_pubkey_kind
+          ON nostr_events (pubkey, kind)
+          WHERE kind IN (0,3) AND deleted = FALSE;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS uniq_param_replaceable
+          ON nostr_events (pubkey, kind, d_tag)
+          WHERE kind BETWEEN 30000 AND 39999 AND d_tag IS NOT NULL AND deleted = FALSE;
+        `;
+        const client = await this.pool.connect();
+        try {
+            await client.query(ddl);
+        } finally {
+            client.release();
+        }
     }
 
     async saveEvent(event: Event): Promise<void> {
+        await this.ready();
         // Skip ephemeral events (NIP-16: 20000–29999) – do not persist.
         if (event.kind >= 20000 && event.kind <= 29999) {
             return;
@@ -72,6 +159,7 @@ export class PostgresRepository {
     }
 
     async getEventById(id: string): Promise<Event | null> {
+        await this.ready();
         // Fixed table name
         const query = 'SELECT * FROM nostr_events WHERE id = $1';
         const result = await this.pool.query(query, [id]);
@@ -83,10 +171,12 @@ export class PostgresRepository {
     }
 
     async deleteEvent(id: string): Promise<void> {
+        await this.ready();
         await this.pool.query('UPDATE nostr_events SET deleted = TRUE WHERE id = $1', [id]);
     }
 
     async countByFilters(filters: any): Promise<number> {
+        await this.ready();
         const parts: string[] = ['deleted = FALSE'];
         const vals: any[] = [];
         let i = 1;
@@ -203,6 +293,7 @@ export class PostgresRepository {
     }
 
     async queryByFilters(filters: any): Promise<Event[]> {
+        await this.ready();
         const parts: string[] = ['deleted = FALSE'];
         const vals: any[] = [];
         let i = 1;
