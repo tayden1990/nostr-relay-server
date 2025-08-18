@@ -246,3 +246,65 @@ npm start
 
 ## License
 MIT
+
+## Fix migration syntax error (near WHERE)
+
+If the container logs show “Error running migrations: syntax error at or near WHERE”, your SQL migration has a stray WHERE or duplicated index blocks. Update your migration (e.g., src/storage/postgres/migrations/001_init.sql) to use this tag-array trigger/function and keep only one set of unique indexes:
+
+```sql
+-- filepath: src/storage/postgres/migrations/001_init.sql
+-- Ensure helper columns exist
+ALTER TABLE nostr_events
+  ADD COLUMN IF NOT EXISTS e_tags text[],
+  ADD COLUMN IF NOT EXISTS p_tags text[];
+
+-- Set e_tags/p_tags from JSONB tags
+CREATE OR REPLACE FUNCTION nostr_events_update_tag_arrays()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.e_tags := (
+    SELECT array_agg(elem->>1)
+    FROM jsonb_array_elements(NEW.tags) AS elem
+    WHERE elem->>0 = 'e'
+  );
+  NEW.p_tags := (
+    SELECT array_agg(elem->>1)
+    FROM jsonb_array_elements(NEW.tags) AS elem
+    WHERE elem->>0 = 'p'
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS nostr_events_set_tag_arrays ON nostr_events;
+CREATE TRIGGER nostr_events_set_tag_arrays
+BEFORE INSERT OR UPDATE OF tags ON nostr_events
+FOR EACH ROW
+EXECUTE FUNCTION nostr_events_update_tag_arrays();
+
+-- Indexes for tag lookups
+CREATE INDEX IF NOT EXISTS idx_events_e_tags_gin ON nostr_events USING GIN (e_tags);
+CREATE INDEX IF NOT EXISTS idx_events_p_tags_gin ON nostr_events USING GIN (p_tags);
+
+-- Keep one set of unique indexes only (remove duplicates if present)
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_replaceable_pubkey_kind
+  ON nostr_events (pubkey, kind)
+  WHERE kind IN (0,3) AND deleted = FALSE;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_param_replaceable
+  ON nostr_events (pubkey, kind, d_tag)
+  WHERE kind BETWEEN 30000 AND 39999 AND d_tag IS NOT NULL AND deleted = FALSE;
+```
+
+After updating the SQL, restart the stack:
+```bash
+docker restart nostr-relay
+# or re-pull/recreate if needed:
+# docker stop nostr-relay && docker rm nostr-relay
+# docker pull taksa1990/nostr-relay:latest
+# docker run -d --name nostr-relay --network nostr-net -p 8080:8080 \
+#   -e NODE_ENV=production -e PORT=8080 \
+#   -e DATABASE_URL=postgres://user:password@postgres:5432/nostr \
+#   -e REDIS_URL=redis://redis:6379 \
+#   taksa1990/nostr-relay:latest
+```

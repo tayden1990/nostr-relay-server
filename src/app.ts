@@ -66,7 +66,7 @@ if (process.env.NODE_ENV !== 'test') {
 
 // Background: scheduled cleanup of expired events every 10 minutes
 let repoForSweep: PostgresRepository | undefined;
-// Use platform-compatible interval return type (Node/JS)
+// Use platform-compatible type for setInterval handle
 let sweepTimer: ReturnType<typeof setInterval> | undefined;
 if (process.env.DATABASE_URL) {
     repoForSweep = new PostgresRepository(process.env.DATABASE_URL);
@@ -89,10 +89,10 @@ const shutdown = async (signal: string) => {
         if (sweepTimer) clearInterval(sweepTimer);
         await new Promise<void>((resolve) => server.close(() => resolve()));
         wss.close();
-        if (repoForSweep && typeof repoForSweep.close === 'function') {
-            await repoForSweep.close();
+        if (repoForSweep && typeof (repoForSweep as any).close === 'function') {
+            await (repoForSweep as any).close();
         }
-    } catch (e) {
+    } catch {
         // ignore
     } finally {
         process.exit(0);
