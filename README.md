@@ -130,6 +130,8 @@ services:
 - CREATED_AT_MAX_AGE_SEC: default 604800 (NIP-22 max age)
 - RATE_LIMIT: default 100 (requests per window)
 - RATE_LIMIT_WINDOW_MS: default 60000 (window in ms)
+- REQUIRE_AUTH_FOR_WRITE: "true" to require NIP-42 auth to publish events (default "false")
+- RUN_MIGRATIONS: "1" to execute dist/scripts/migrate.js on container start (default "0")
 
 NIP-96 service (optional):
 - PORT: default 3001
@@ -143,7 +145,14 @@ NIP-96 service (optional):
 
 ## aaPanel: exact settings (step-by-step)
 1) Docker > Network > Add
-- Name: nostr-net, Driver: bridge, IPv6: OFF
+- Network name: nostr-net
+- Device (driver): bridge
+- IPv4 subnet: leave empty (auto) OR 172.25.0.0/16
+- IPv4 gateway: leave empty (auto) OR 172.25.0.1
+- IPv4 range: leave empty (optional) OR 172.25.0.0/24
+- Enable IPv6: OFF
+- Confirm
+
 
 2) Create Postgres
 - Image: postgres:13
@@ -237,6 +246,13 @@ docker buildx build --platform linux/amd64,linux/arm64 -t YOUR_DH_USER/nostr-rel
   - Put proxy and relay on the same network and target nostr-relay:8080
 - Port binding:
   - Avoid “publish all ports”; map explicitly: -p 8080:8080
+- “No relay acknowledgement” when publishing:
+  - If your client does not support NIP-42 auth, set REQUIRE_AUTH_FOR_WRITE=false (default).
+  - Check /metrics ws_messages_total and events_ingested_total while publishing.
+- NIP-11 “Failed to fetch”:
+  - Use: http://YOUR_SERVER_IP:8080/.well-known/nostr.json
+  - If behind TLS proxy, ensure the proxy allows GET/HEAD/OPTIONS and does not strip /.well-known.
+  - CORS is enabled with Access-Control-Allow-Origin: * on NIP-11 responses.
 
 ## Building locally
 ```bash

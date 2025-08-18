@@ -20,7 +20,8 @@ WORKDIR /app
 ENV NODE_ENV=production PORT=8080
 # Prefer service-name defaults; override in aaPanel:
 ENV DATABASE_URL=postgres://user:password@postgres:5432/nostr \
-    REDIS_URL=redis://redis:6379
+    REDIS_URL=redis://redis:6379 \
+    RUN_MIGRATIONS=0
 # OCI metadata (provided via build args from CI)
 ARG VCS_REF
 ARG BUILD_DATE
@@ -49,5 +50,5 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -qO- http://127.0.0.1:8080/health >/dev/null 2>&1 || exit 1
 ENTRYPOINT ["dumb-init", "--"]
-# Run DB migrations (best-effort), then start the app
-CMD ["sh", "-c", "node dist/scripts/migrate.js || echo '[migrate] failed (continuing)'; node dist/src/app.js"]
+# Conditionally run DB migrations, then start the app
+CMD ["sh", "-c", "if [ \"${RUN_MIGRATIONS}\" = \"1\" ]; then node dist/scripts/migrate.js || echo '[migrate] failed (continuing)'; fi; node dist/src/app.js"]

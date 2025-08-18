@@ -12,6 +12,7 @@ const liveSubs: WeakMap<WebSocket, Map<string, any[]>> = new WeakMap();
 const allSockets = new Set<WebSocket>();
 let liveFeedStarted = false;
 let globalPubSub: PubSub | undefined;
+const REQUIRE_AUTH_FOR_WRITE = String(process.env.REQUIRE_AUTH_FOR_WRITE || 'false').toLowerCase() === 'true';
 
 function ensureLiveFeed() {
     if (liveFeedStarted) return;
@@ -127,9 +128,9 @@ export const handleWebSocketConnection = (ws: WebSocket) => {
                 return;
             }
 
-            // EVENT handling requires auth (write)
+            // EVENT handling (writes). Auth optional, controlled by REQUIRE_AUTH_FOR_WRITE.
             const evt = payload;
-            if (!isAuthed(ws)) {
+            if (REQUIRE_AUTH_FOR_WRITE && !isAuthed(ws)) {
                 ws.send(JSON.stringify(["OK", evt?.id || "", false, "auth-required"]));
                 return;
             }
@@ -138,9 +139,7 @@ export const handleWebSocketConnection = (ws: WebSocket) => {
                 return;
             }
             await ingestEvent(evt);
-            recordMessageProcessed(); // keep existing counter
-            // also count ingested events explicitly
-            // (safe even if ingestEvent already published to Redis)
+            recordMessageProcessed();
             recordEventIngested();
             ws.send(JSON.stringify(["OK", evt.id, true, ""]));
         } catch (error: any) {
