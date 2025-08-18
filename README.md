@@ -308,3 +308,95 @@ docker restart nostr-relay
 #   -e REDIS_URL=redis://redis:6379 \
 #   taksa1990/nostr-relay:latest
 ```
+
+## Docker Hub Overview (copy/paste)
+
+Production-ready Nostr relay server written in TypeScript. Implements core NIPs, stores events in Postgres, uses Redis pub/sub for fan-out, and offers optional NIP-96 HTTP file storage.
+
+Features
+- WebSocket and HTTP endpoints
+- NIP-11 relay info
+- Postgres storage (replaceable and parameterized replaceable)
+- NIP-09 deletion, NIP-40 expiration, ephemeral non-persistence
+- Redis pub/sub for real-time delivery
+- Prometheus /metrics
+
+Image
+- Repository: taksa1990/nostr-relay
+- Tag: latest
+- Exposed port: 8080
+- Healthcheck: GET /health
+
+Requirements
+- Postgres 13+
+- Redis 6+
+- These are external dependencies; this image is not all-in-one.
+
+Quick start
+```bash
+docker pull taksa1990/nostr-relay:latest
+docker run -d --name nostr-relay -p 8080:8080 \
+  -e NODE_ENV=production \
+  -e PORT=8080 \
+  -e DATABASE_URL=postgres://user:password@DB_HOST:5432/nostr \
+  -e REDIS_URL=redis://REDIS_HOST:6379 \
+  taksa1990/nostr-relay:latest
+```
+
+Recommended (networked services)
+```bash
+docker network create nostr-net
+
+docker run -d --name postgres --network nostr-net \
+  -e POSTGRES_USER=user -e POSTGRES_PASSWORD=password -e POSTGRES_DB=nostr \
+  postgres:13
+
+docker run -d --name redis --network nostr-net redis:6
+
+docker run -d --name nostr-relay --network nostr-net -p 8080:8080 \
+  -e NODE_ENV=production -e PORT=8080 \
+  -e DATABASE_URL=postgres://user:password@postgres:5432/nostr \
+  -e REDIS_URL=redis://redis:6379 \
+  taksa1990/nostr-relay:latest
+```
+
+Docker Compose (minimal)
+```yaml
+services:
+  nostr-relay:
+    image: taksa1990/nostr-relay:latest
+    environment:
+      - DATABASE_URL=postgres://user:password@postgres:5432/nostr
+      - REDIS_URL=redis://redis:6379
+    ports: ["8080:8080"]
+    depends_on: [postgres, redis]
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: nostr
+  redis:
+    image: redis:6
+```
+
+Environment variables
+- PORT: default 8080
+- DATABASE_URL: postgres://USER:PASS@HOST:5432/DB
+- REDIS_URL: redis://HOST:6379
+- MAX_MESSAGE_SIZE: default 1048576
+- RELAY_NAME, RELAY_DESCRIPTION: NIP-11 info (optional)
+
+Health and info
+- Health: http://HOST:8080/health
+- NIP-11: http://HOST:8080/.well-known/nostr.json
+- Metrics: http://HOST:8080/metrics
+
+Notes
+- Put a reverse proxy (Caddy/Nginx) in front for TLS and use wss://YOUR_DOMAIN.
+- If logs show ECONNREFUSED 127.0.0.1 for DB/Redis, set DATABASE_URL/REDIS_URL to service names/hosts reachable from the container.
+
+Links
+- Source: https://github.com/tayden1990/nostr-relay-server
+- Issues: https://github.com/tayden1990/nostr-relay-server/issues
+- License: MIT
