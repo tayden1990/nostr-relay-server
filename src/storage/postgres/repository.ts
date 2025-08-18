@@ -7,8 +7,11 @@ export class PostgresRepository {
     private static initPromise: Promise<void> | null = null;
 
     constructor(connectionString: string) {
-        this.pool = new Pool({
-            connectionString,
+        this.pool = new Pool({ connectionString });
+        // Log pool-level errors (e.g., ECONNREFUSED)
+        this.pool.on('error', (err) => {
+            // eslint-disable-next-line no-console
+            console.error('Postgres pool error:', err?.message || err);
         });
         // kick off bootstrap once per process
         if (!PostgresRepository.initPromise) {
@@ -91,6 +94,10 @@ export class PostgresRepository {
         const client = await this.pool.connect();
         try {
             await client.query(ddl);
+        } catch (e: any) {
+            // eslint-disable-next-line no-console
+            console.error('ensureSchema failed:', e?.message || e);
+            throw e;
         } finally {
             client.release();
         }

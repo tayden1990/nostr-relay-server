@@ -22,6 +22,8 @@ npm start
 
 - POST /upload — Upload a file. Multipart form field name: "file". Returns JSON: { url, size, type, name }.
 - GET /media/:key — Retrieve a locally stored file (only when using local storage).
+- GET /health — Service health.
+- GET /info — Non-sensitive runtime info (storage method, limits).
 
 ## Configuration
 

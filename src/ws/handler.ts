@@ -1,7 +1,7 @@
 import WebSocket, { Server as WSServer } from 'ws';
 import { validateEvent } from '../relay/events/validate';
 import { ingestEvent } from '../relay/events/ingest';
-import { recordMessageProcessed } from '../utils/metrics';
+import { recordMessageProcessed, incWsConnections, decWsConnections, incWsMessages, startQueryTimer, observeQueryDuration, setRedisUp, recordEventIngested } from '../utils/metrics';
 import { logError, logInfo } from '../utils/logger';
 import { issueAuthChallenge, handleAuthResponse, isAuthed } from './auth';
 import { PostgresRepository } from '../storage/postgres/repository';
@@ -19,6 +19,8 @@ function ensureLiveFeed() {
     try {
         globalPubSub = new PubSub(process.env.REDIS_URL || 'redis://localhost:6379');
         globalPubSub.subscribe('events');
+        setRedisUp(1);
+        logInfo('Subscribed to 1 channel(s).');
         globalPubSub.on('events', (msg: string) => {
             try {
                 const evt = JSON.parse(msg);
@@ -32,9 +34,14 @@ function ensureLiveFeed() {
                         }
                     }
                 }
-            } catch {}
+            } catch (e: any) {
+                logError(`Error parsing pubsub event: ${e?.message || String(e)}`);
+            }
         });
-    } catch {}
+    } catch (e: any) {
+        setRedisUp(0);
+        logError(`Redis pubsub setup failed: ${e?.message || String(e)}`);
+    }
 }
 
 export const handleWebSocketConnection = (ws: WebSocket) => {
@@ -44,7 +51,19 @@ export const handleWebSocketConnection = (ws: WebSocket) => {
     ensureLiveFeed();
     allSockets.add(ws);
     liveSubs.set(ws, new Map());
+    incWsConnections();
+
+    // Keepalive (avoid idle timeouts)
+    let alive = true;
+    ws.on('pong', () => { alive = true; });
+    const pingTimer = setInterval(() => {
+        if (!alive) return ws.terminate();
+        alive = false;
+        try { ws.ping(); } catch {}
+    }, 30000);
+
     ws.on('message', async (message: WebSocket.Data) => {
+        incWsMessages();
         try {
             const text = typeof message === 'string' ? message : message.toString();
             const payload = JSON.parse(text);
@@ -60,8 +79,16 @@ export const handleWebSocketConnection = (ws: WebSocket) => {
             // COUNT request (NIP-45): ["COUNT", <subscription_id>, <filters>]
             if (Array.isArray(payload) && payload[0] === 'COUNT') {
                 const [, subId, filters] = payload;
-                const count = await repo.countByFilters(filters);
-                ws.send(JSON.stringify(["COUNT", subId, { count }]));
+                const t0 = startQueryTimer();
+                try {
+                    const count = await repo.countByFilters(filters);
+                    ws.send(JSON.stringify(["COUNT", subId, { count }]));
+                } catch (e: any) {
+                    logError(`COUNT failed: ${e?.message || String(e)}`);
+                    ws.send(JSON.stringify(["COUNT", subId, { count: 0 }]));
+                } finally {
+                    observeQueryDuration(t0);
+                }
                 return;
             }
 
@@ -70,6 +97,7 @@ export const handleWebSocketConnection = (ws: WebSocket) => {
                 const subId = payload[1];
                 const filters = payload.slice(2) || [];
                 const sent = new Set<string>();
+                const t0 = startQueryTimer();
                 try {
                     for (const f of filters) {
                         const events = await repo.queryByFilters(f);
@@ -79,9 +107,10 @@ export const handleWebSocketConnection = (ws: WebSocket) => {
                             sent.add(evt.id);
                         }
                     }
-                } catch (e) {
-                    // ignore fetch errors; still send EOSE
+                } catch (e: any) {
+                    logError(`REQ query failed: ${e?.message || String(e)}`);
                 } finally {
+                    observeQueryDuration(t0);
                     ws.send(JSON.stringify(["EOSE", subId]));
                     // register live subscription
                     const m = liveSubs.get(ws);
@@ -109,7 +138,10 @@ export const handleWebSocketConnection = (ws: WebSocket) => {
                 return;
             }
             await ingestEvent(evt);
-            recordMessageProcessed();
+            recordMessageProcessed(); // keep existing counter
+            // also count ingested events explicitly
+            // (safe even if ingestEvent already published to Redis)
+            recordEventIngested();
             ws.send(JSON.stringify(["OK", evt.id, true, ""]));
         } catch (error: any) {
             logError(`Error handling message: ${error?.message || String(error)}`);
@@ -119,8 +151,10 @@ export const handleWebSocketConnection = (ws: WebSocket) => {
 
     ws.on('close', () => {
         logInfo('WebSocket connection closed');
+        clearInterval(pingTimer);
         allSockets.delete(ws);
         liveSubs.delete(ws);
+        decWsConnections();
     });
 };
 

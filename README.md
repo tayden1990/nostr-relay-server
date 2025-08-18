@@ -39,6 +39,7 @@ docker run --rm -p 8080:8080 \
 ```
 Health and info:
 - Health: GET http://localhost:8080/health
+- Readiness: GET http://localhost:8080/ready
 - NIP-11: GET http://localhost:8080/.well-known/nostr.json
 
 ## Elementary step-by-step (no Compose)
@@ -123,8 +124,12 @@ services:
 - PORT: default 8080
 - DATABASE_URL: Postgres connection string
 - REDIS_URL: Redis connection string
-- MAX_MESSAGE_SIZE: default 1048576
+- MAX_MESSAGE_SIZE: default 1048576 (bytes, also sets express.json limit)
 - RELAY_NAME, RELAY_DESCRIPTION: for NIP-11
+- CREATED_AT_MAX_FUTURE_SKEW_SEC: default 900 (NIP-22 future skew)
+- CREATED_AT_MAX_AGE_SEC: default 604800 (NIP-22 max age)
+- RATE_LIMIT: default 100 (requests per window)
+- RATE_LIMIT_WINDOW_MS: default 60000 (window in ms)
 
 NIP-96 service (optional):
 - PORT: default 3001
@@ -389,6 +394,7 @@ Environment variables
 
 Health and info
 - Health: http://HOST:8080/health
+- Readiness: http://HOST:8080/ready
 - NIP-11: http://HOST:8080/.well-known/nostr.json
 - Metrics: http://HOST:8080/metrics
 
@@ -400,3 +406,31 @@ Links
 - Source: https://github.com/tayden1990/nostr-relay-server
 - Issues: https://github.com/tayden1990/nostr-relay-server/issues
 - License: MIT
+
+## Debug checklist
+
+1) Check container logs
+```bash
+docker logs -f --tail=200 nostr-relay
+```
+
+2) Verify readiness (DB reachable)
+- http://YOUR_SERVER_IP:8080/ready should return {"ok":true,"db":"ok"} when DATABASE_URL is set and reachable.
+
+3) Verify schema in Postgres
+```bash
+docker exec -it postgres psql -U user -d nostr -c "\d nostr_events"
+# If the table is missing, repository bootstrap should create it on first query.
+```
+
+4) Exercise endpoints
+```bash
+curl -fsS http://YOUR_SERVER_IP:8080/health
+curl -fsS http://YOUR_SERVER_IP:8080/.well-known/nostr.json
+```
+
+5) WebSocket smoke test
+- Connect with a Nostr client to ws://YOUR_SERVER_IP:8080
+- Subscribe (REQ), you should receive EOSE and events if any exist.
+
+If migrate.js fails but the app is up, the repository bootstrap will create the schema automatically on first use. Fix your migration file later as documented in “Fix migration syntax error”.

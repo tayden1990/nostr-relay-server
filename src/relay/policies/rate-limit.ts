@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 
-const RATE_LIMIT = 100; // Maximum number of requests allowed
-const TIME_WINDOW = 60 * 1000; // Time window in milliseconds (1 minute)
+const RATE_LIMIT = Number(process.env.RATE_LIMIT || 100); // requests
+const TIME_WINDOW = Number(process.env.RATE_LIMIT_WINDOW_MS || 60 * 1000); // ms
 
 const requestCounts: { [key: string]: { count: number; lastRequestTime: number } } = {};
 
