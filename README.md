@@ -27,7 +27,7 @@ A production-ready Nostr relay server written in TypeScript. It implements core 
 - Prometheus metrics
 
 ## Supported NIPs
-1, 2, 4, 5, 9, 10, 11, 13, 17, 18, 19, 21, 23, 25, 27, 28, 29, 30, 33, 40, 42, 44, 47, 51, 57, 58, 59, 65, 78, 96, 98
+1, 2, 4, 5, 9, 10, 11, 13, 15, 17, 18, 19, 21, 23, 25, 27, 28, 29, 30, 33, 40, 42, 44, 45, 47, 51, 57, 58, 59, 65, 78, 96, 98
 
 ## Quickstart (Docker)
 ```bash
@@ -132,6 +132,8 @@ services:
 - RATE_LIMIT_WINDOW_MS: default 60000 (window in ms)
 - REQUIRE_AUTH_FOR_WRITE: "true" to require NIP-42 auth to publish events (default "false")
 - RUN_MIGRATIONS: "1" to execute dist/scripts/migrate.js on container start (default "0")
+- MAX_FILTERS: cap number of filters per REQ/COUNT (default 20, advertised in NIP-11)
+- MAX_LIMIT: cap per-filter "limit" (default 500, advertised in NIP-11)
 
 NIP-96 service (optional):
 - PORT: default 3001

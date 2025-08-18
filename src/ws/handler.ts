@@ -13,6 +13,20 @@ const allSockets = new Set<WebSocket>();
 let liveFeedStarted = false;
 let globalPubSub: PubSub | undefined;
 const REQUIRE_AUTH_FOR_WRITE = String(process.env.REQUIRE_AUTH_FOR_WRITE || 'false').toLowerCase() === 'true';
+const MAX_FILTERS = Number(process.env.MAX_FILTERS || 20);
+const MAX_LIMIT = Number(process.env.MAX_LIMIT || 500);
+
+function sendNotice(ws: WebSocket, text: string) {
+    try { ws.send(JSON.stringify(["NOTICE", text])); } catch {}
+}
+
+function sanitizeFilters(filters: any[]): any[] {
+    const trimmed = Array.isArray(filters) ? filters.slice(0, MAX_FILTERS) : [];
+    for (const f of trimmed) {
+        if (typeof f?.limit === 'number' && f.limit > MAX_LIMIT) f.limit = MAX_LIMIT;
+    }
+    return trimmed;
+}
 
 function ensureLiveFeed() {
     if (liveFeedStarted) return;
@@ -82,7 +96,8 @@ export const handleWebSocketConnection = (ws: WebSocket) => {
                 const [, subId, filters] = payload;
                 const t0 = startQueryTimer();
                 try {
-                    const count = await repo.countByFilters(filters);
+                    const safeFilters = sanitizeFilters(filters);
+                    const count = await repo.countByFilters(safeFilters);
                     ws.send(JSON.stringify(["COUNT", subId, { count }]));
                 } catch (e: any) {
                     logError(`COUNT failed: ${e?.message || String(e)}`);
@@ -96,11 +111,17 @@ export const handleWebSocketConnection = (ws: WebSocket) => {
             // REQ subscription (NIP-01 + EOSE NIP-15): ["REQ", <subscription_id>, <filter1>, <filter2>, ...]
             if (Array.isArray(payload) && payload[0] === 'REQ') {
                 const subId = payload[1];
-                const filters = payload.slice(2) || [];
+                let filters = payload.slice(2) || [];
+                if (!Array.isArray(filters)) filters = [];
+                const over = filters.length - MAX_FILTERS;
+                const safeFilters = sanitizeFilters(filters);
+                if (over > 0) {
+                    sendNotice(ws, `too-many-filters: received=${filters.length}, allowed=${MAX_FILTERS}`);
+                }
                 const sent = new Set<string>();
                 const t0 = startQueryTimer();
                 try {
-                    for (const f of filters) {
+                    for (const f of safeFilters) {
                         const events = await repo.queryByFilters(f);
                         for (const evt of events) {
                             if (sent.has(evt.id)) continue;
@@ -115,7 +136,7 @@ export const handleWebSocketConnection = (ws: WebSocket) => {
                     ws.send(JSON.stringify(["EOSE", subId]));
                     // register live subscription
                     const m = liveSubs.get(ws);
-                    if (m) m.set(subId, filters);
+                    if (m) m.set(subId, safeFilters);
                 }
                 return;
             }
@@ -128,20 +149,39 @@ export const handleWebSocketConnection = (ws: WebSocket) => {
                 return;
             }
 
-            // EVENT handling (writes). Auth optional, controlled by REQUIRE_AUTH_FOR_WRITE.
-            const evt = payload;
-            if (REQUIRE_AUTH_FOR_WRITE && !isAuthed(ws)) {
-                ws.send(JSON.stringify(["OK", evt?.id || "", false, "auth-required"]));
+            // EVENT publish (support both ["EVENT", <event>] and bare event object)
+            let evt: any | undefined;
+            if (Array.isArray(payload) && payload[0] === 'EVENT' && typeof payload[1] === 'object' && payload[1]) {
+                evt = payload[1];
+            } else if (payload && typeof payload === 'object' && payload.id && payload.pubkey) {
+                evt = payload;
+            }
+
+            if (evt) {
+                const id = evt.id || '';
+                if (REQUIRE_AUTH_FOR_WRITE && !isAuthed(ws)) {
+                    ws.send(JSON.stringify(["OK", id, false, "auth-required"]));
+                    return;
+                }
+                if (!validateEvent(evt)) {
+                    ws.send(JSON.stringify(["OK", id, false, "invalid-event"]));
+                    return;
+                }
+                try {
+                    await ingestEvent(evt);
+                    recordMessageProcessed();
+                    recordEventIngested();
+                    ws.send(JSON.stringify(["OK", id, true, ""]));
+                } catch (e: any) {
+                    logError(`ingest failed id=${id}: ${e?.message || String(e)}`);
+                    ws.send(JSON.stringify(["OK", id, false, "server-error"]));
+                }
                 return;
             }
-            if (!validateEvent(evt)) {
-                ws.send(JSON.stringify(["OK", evt?.id || "", false, "invalid-event"]));
-                return;
-            }
-            await ingestEvent(evt);
-            recordMessageProcessed();
-            recordEventIngested();
-            ws.send(JSON.stringify(["OK", evt.id, true, ""]));
+
+            // Unknown message type; inform client per NIP-01
+            sendNotice(ws, 'unrecognized-message');
+            return;
         } catch (error: any) {
             logError(`Error handling message: ${error?.message || String(error)}`);
             ws.send(JSON.stringify(["OK", "", false, "server-error"]));
