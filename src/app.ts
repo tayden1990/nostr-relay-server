@@ -71,15 +71,27 @@ app.get('/metrics', async (_req, res) => {
 // NIP-11 preflight (CORS)
 app.options('/.well-known/nostr.json', (_req, res) => {
     res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    res.set('Access-Control-Allow-Headers', '*, Content-Type');
+    res.set('Access-Control-Allow-Methods', 'GET, OPTIONS, HEAD');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Accept');
     res.sendStatus(204);
+});
+
+// NIP-11 HEAD (some tools probe with HEAD)
+app.head('/.well-known/nostr.json', (_req, res) => {
+    res.set('Content-Type', 'application/nostr+json; charset=utf-8');
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Cache-Control', 'public, max-age=60');
+    res.status(200).end();
 });
 
 // NIP-11 info endpoints
 app.get('/.well-known/nostr.json', infoNip11);
+// Compatibility aliases
+app.get('/nostr.json', infoNip11);
+app.get('/nip11', infoNip11);
 // Alias used by tests and some tools
 app.get('/info-nip11', infoNip11);
+
 // Debug endpoint for NIP-11 values (do not use in production if you don’t want env leak)
 app.get('/debug/nip11', (_req, res) => {
     try {
@@ -114,6 +126,22 @@ app.post('/events', async (req, res) => {
     } catch (e: any) {
         return res.status(500).json({ error: e?.message || 'ingest-failed' });
     }
+});
+
+// Simple root page to reduce 404 noise and provide pointers
+app.get('/', (_req, res) => {
+    res
+      .type('text/plain; charset=utf-8')
+      .send(
+`Nostr Relay is running.
+
+Useful endpoints:
+- Health:        /health
+- Readiness:     /ready
+- NIP-11:        /.well-known/nostr.json
+- Metrics:       /metrics
+`
+      );
 });
 
 // Setup WebSocket handling

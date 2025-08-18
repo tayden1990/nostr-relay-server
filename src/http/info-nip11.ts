@@ -5,8 +5,9 @@ import { logInfo, logError } from '../utils/logger';
 
 function setCors(res: Response) {
     res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    res.set('Access-Control-Allow-Headers', '*, Content-Type');
+    res.set('Access-Control-Allow-Methods', 'GET, OPTIONS, HEAD');
+    // Explicit header list is more broadly compatible than '*'
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Accept');
     res.set('Vary', 'Origin');
 }
 
