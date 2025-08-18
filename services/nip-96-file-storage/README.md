@@ -86,6 +86,31 @@ services:
     ports: ["3001:3001"]
 ```
 
+## Logging and log viewer
+The file storage service shares the same structured logging system.
+
+Viewer endpoints on the NIP-96 service:
+- GET /logs — HTML log viewer
+- GET /logs/list — List files
+- GET /logs/view — JSON view with filters file, level, q, limit
+- GET /logs/download — Download a raw file
+
+Examples
+```bash
+# UI
+http://HOST:3001/logs
+
+# Last 100 info lines that contain "upload"
+curl -s "http://HOST:3001/logs/view?level=info&q=upload&limit=100" | jq .
+
+# Download
+curl -OJ "http://HOST:3001/logs/download?file=combined.log"
+```
+
+Env
+- LOG_DIR, LOG_LEVEL, LOG_MAX_FILES as in the main relay.
+- Consider protecting /logs with your reverse proxy (auth/ACL) if exposed publicly.
+
 ## License
 
 MIT

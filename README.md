@@ -16,6 +16,7 @@ A production-ready Nostr relay server written in TypeScript. It implements core 
 - Configuration (env vars)
 - Publish to Docker Hub and GitHub
 - Troubleshooting
+- Logging and log viewer
 
 ## Features
 - WebSocket and HTTP endpoints
@@ -255,6 +256,46 @@ docker buildx build --platform linux/amd64,linux/arm64 -t YOUR_DH_USER/nostr-rel
   - Use: http://YOUR_SERVER_IP:8080/.well-known/nostr.json
   - If behind TLS proxy, ensure the proxy allows GET/HEAD/OPTIONS and does not strip /.well-known.
   - CORS is enabled with Access-Control-Allow-Origin: * on NIP-11 responses.
+
+## Logging and log viewer
+This server emits structured JSON logs to files and human-friendly logs to console.
+
+- File location: LOG_DIR (default ./logs) with combined.log and error.log
+- Optional rotation: if winston-daily-rotate-file is installed, files rotate daily (combined-%DATE%.log, error-%DATE%.log) and can be gzipped
+
+Viewer endpoints (no auth by default; protect via proxy or network ACL):
+- GET /logs — Simple HTML UI with filters and a Download button
+- GET /logs/list — JSON list of available log files
+- GET /logs/view — View logs as JSON with filters:
+  - Query params: file, level=error|warn|info|debug, q=<substring>, limit=10..1000
+  - Example: /logs/view?level=error&q=postgres&limit=200
+- GET /logs/download — Download a raw log file
+  - Query param: file (e.g., combined.log or combined-2025-08-18.log.gz)
+
+Quick examples
+```bash
+# HTML UI (open in browser)
+http://HOST:8080/logs
+
+# List files
+curl -s http://HOST:8080/logs/list | jq .
+
+# Filter view (last 200 error lines containing "redis")
+curl -s "http://HOST:8080/logs/view?level=error&q=redis&limit=200" | jq .
+
+# Download a specific file
+curl -OJ "http://HOST:8080/logs/download?file=combined.log"
+```
+
+Logging configuration (env)
+- LOG_DIR: directory for log files (default ./logs)
+- LOG_LEVEL: error | warn | info | debug (default info)
+- LOG_MAX_FILES: retention when rotation is enabled (e.g., "14d")
+- Note: for daily rotation, add winston-daily-rotate-file to your image/env. Without it, logs go to combined.log and error.log.
+
+Security
+- Place /logs behind your reverse proxy’s auth/ACL if exposed to the internet.
+- Alternatively, bind the relay to a private network and access /logs via your admin VPN.
 
 ## Building locally
 ```bash
