@@ -1,8 +1,12 @@
 import express from 'express';
 import multer from 'multer';
-import { saveBuffer } from './storage/local';
+import { saveBuffer, LOCAL_STORAGE_DIR } from './storage/local';
 import { uploadBufferToS3 } from './storage/s3';
 import { v4 as uuidv4 } from 'uuid';
+import fs from 'fs';
+import fsp from 'fs/promises';
+import path from 'path';
+import os from 'os';
 
 const router = express.Router();
 const MAX_FILE_SIZE = Number(process.env.MAX_FILE_SIZE || 50 * 1024 * 1024);
@@ -10,9 +14,15 @@ const MAX_FILE_SIZE = Number(process.env.MAX_FILE_SIZE || 50 * 1024 * 1024);
 const BASE_URL = (process.env.BASE_URL || '').trim();
 // Accept both STORAGE_METHOD and STORAGE_TYPE for compatibility
 const storageMethod = (process.env.STORAGE_METHOD || process.env.STORAGE_TYPE || 'local').toLowerCase();
+// Temp dir for incoming files (defaults to OS tmp)
+const TMP_DIR = (process.env.UPLOAD_TMP_DIR || os.tmpdir()).toString();
 
+// Multer: write to disk to avoid large memory buffers
 const upload = multer({
-    storage: multer.memoryStorage(),
+    storage: multer.diskStorage({
+        destination: (_req, _file, cb) => cb(null, TMP_DIR),
+        filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
+    }),
     limits: { fileSize: MAX_FILE_SIZE },
 });
 
@@ -21,15 +31,21 @@ router.post('/upload', upload.single('file'), async (req, res) => {
         if (!req.file) {
             return res.status(400).json({ error: 'No file provided' });
         }
+        const tempPath = (req.file as any).path as string;
         const ext = (req.file.originalname.split('.').pop() || '').toLowerCase();
         const key = `${uuidv4()}${ext ? '.' + ext : ''}`;
 
         let url: string;
         if (storageMethod === 's3') {
-            url = await uploadBufferToS3(req.file.buffer, req.file.mimetype, key);
+            const stream = fs.createReadStream(tempPath);
+            url = await uploadBufferToS3(stream, req.file.mimetype, key);
+            // cleanup temp file
+            try { await fsp.unlink(tempPath); } catch {}
         } else {
-            const saved = await saveBuffer(key, req.file.buffer);
-            // Expose via /media in server.ts
+            // local storage: move temp file directly into media dir (no buffering)
+            try { await fsp.mkdir(LOCAL_STORAGE_DIR, { recursive: true }); } catch {}
+            const dest = path.join(LOCAL_STORAGE_DIR, key);
+            await fsp.rename(tempPath, dest);
             const prefix = BASE_URL ? BASE_URL.replace(/\/$/, '') : '';
             url = `${prefix}/media/${key}`;
         }

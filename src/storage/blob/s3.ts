@@ -1,4 +1,3 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import fs from 'fs';
 import path from 'path';
 
@@ -7,24 +6,32 @@ function ensureS3() {
         throw new Error('S3 disabled: set ENABLE_S3=true to enable');
     }
     const region = process.env.AWS_REGION;
-    const s3 = new S3Client({ region });
+    const req: any = (eval as unknown as (code: string) => any)('require');
+    const mod = req('@aws-sdk/client-s3');
+    const s3 = new mod.S3Client({ region });
     const BUCKET_NAME = process.env.S3_BUCKET_NAME;
     if (!BUCKET_NAME) throw new Error('S3_BUCKET_NAME is required');
-    return { s3, BUCKET_NAME };
+    return {
+        s3,
+        BUCKET_NAME,
+        region,
+        PutObjectCommand: mod.PutObjectCommand,
+        GetObjectCommand: mod.GetObjectCommand,
+        DeleteObjectCommand: mod.DeleteObjectCommand,
+    };
 }
 
 export const uploadFile = async (filePath: string): Promise<string> => {
-    const { s3, BUCKET_NAME } = ensureS3();
+    const { s3, BUCKET_NAME, region, PutObjectCommand } = ensureS3();
     const data = fs.readFileSync(filePath);
     const key = `${Date.now()}-${path.basename(filePath)}`;
     await s3.send(new PutObjectCommand({ Bucket: BUCKET_NAME, Key: key, Body: data }));
-    const region = process.env.AWS_REGION;
     const regionPart = region ? `.s3.${region}.amazonaws.com` : '.s3.amazonaws.com';
     return `https://${BUCKET_NAME}${regionPart}/${encodeURIComponent(key)}`;
 };
 
 export const getFile = async (fileKey: string): Promise<Buffer> => {
-    const { s3, BUCKET_NAME } = ensureS3();
+    const { s3, BUCKET_NAME, GetObjectCommand } = ensureS3();
     const resp = await s3.send(new GetObjectCommand({ Bucket: BUCKET_NAME, Key: fileKey }));
     const chunks: Buffer[] = [];
     const stream = resp.Body as unknown as NodeJS.ReadableStream;
@@ -37,6 +44,6 @@ export const getFile = async (fileKey: string): Promise<Buffer> => {
 };
 
 export const deleteFile = async (fileKey: string): Promise<void> => {
-    const { s3, BUCKET_NAME } = ensureS3();
+    const { s3, BUCKET_NAME, DeleteObjectCommand } = ensureS3();
     await s3.send(new DeleteObjectCommand({ Bucket: BUCKET_NAME, Key: fileKey }));
 };

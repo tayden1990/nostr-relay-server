@@ -3,6 +3,7 @@ import uploadsRouter from './uploads';
 import { LOCAL_STORAGE_DIR } from './storage/local';
 import { nip98Auth, ipAllowlist } from './auth';
 import { fileSizeLimitPolicy } from './policies';
+import multer from 'multer';
 
 const app = express();
 app.disable('x-powered-by');
@@ -56,6 +57,18 @@ app.get('/info', (_req, res) => {
         },
         ts: new Date().toISOString(),
     });
+});
+
+// Global error handler (handle Multer file size errors)
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+            const maxFileSize = Number(process.env.MAX_FILE_SIZE || 50 * 1024 * 1024);
+            return res.status(413).json({ error: 'file-too-large', limit: maxFileSize });
+        }
+        return res.status(400).json({ error: err.message, code: err.code });
+    }
+    return res.status(500).json({ error: err?.message || 'internal-error' });
 });
 
 // Start the server

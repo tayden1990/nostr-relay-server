@@ -1,11 +1,13 @@
-import request from 'supertest';
+import supertest from 'supertest';
 import { createServer } from '../../src/app';
 
 describe('End-to-End Integration Tests', () => {
     let server: any;
+    let agent: any;
 
     beforeAll(async () => {
         server = await createServer();
+        agent = supertest(server);
     });
 
     afterAll(async () => {
@@ -13,13 +15,13 @@ describe('End-to-End Integration Tests', () => {
     });
 
     it('should respond to health check', async () => {
-        const response = await request(server).get('/health');
+        const response = await agent.get('/health');
         expect(response.status).toBe(200);
         expect(response.body).toHaveProperty('status', 'ok');
     });
 
     it('should handle NIP-11 info request', async () => {
-        const response = await request(server).get('/info-nip11');
+        const response = await agent.get('/info-nip11');
         expect(response.status).toBe(200);
         expect(response.body).toHaveProperty('supported_nips');
     });
@@ -34,7 +36,7 @@ describe('End-to-End Integration Tests', () => {
             pubkey: 'a'.repeat(64),
         };
 
-        const response = await request(server).post('/events').send(event);
+        const response = await agent.post('/events').send(event);
         expect(response.status).toBe(200);
         expect(response.body).toHaveProperty('id');
     });
@@ -48,7 +50,7 @@ describe('End-to-End Integration Tests', () => {
             pubkey: 'your_public_key_here',
         };
 
-        const response = await request(server).post('/events').send(invalidEvent);
+        const response = await agent.post('/events').send(invalidEvent);
         expect(response.status).toBe(400);
         expect(response.body).toHaveProperty('error', 'Invalid event');
     });
