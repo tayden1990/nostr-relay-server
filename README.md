@@ -452,3 +452,164 @@ curl -fsS http://YOUR_SERVER_IP:8080/.well-known/nostr.json
 - Subscribe (REQ), you should receive EOSE and events if any exist.
 
 If migrate.js fails but the app is up, the repository bootstrap will create the schema automatically on first use. Fix your migration file later as documented in “Fix migration syntax error”.
+
+## Architecture overview
+- Entrypoint: HTTP (Express) + WebSocket (ws)
+- Storage: Postgres (events, replaceable/parameterized replaceable)
+- Fan-out: Redis pub/sub for live EVENT delivery
+- Metrics: Prometheus /metrics
+- Optional: NIP-96 file storage sidecar (local or S3)
+
+Data flow:
+client -> EVENT/REQ over WS -> validate -> repository (Postgres) -> publish to Redis -> subscribers receive EVENT; queries served from Postgres.
+
+## Protocol (NIPs) quick reference
+- Client -> Relay: EVENT, REQ, CLOSE, AUTH, COUNT
+- Relay -> Client: EVENT, OK, EOSE, NOTICE, CLOSED, AUTH, COUNT
+- Writes: relay accepts ["EVENT", <event>] or bare event object and replies ["OK", <id>, <accepted>, <msg>]
+- EOSE (NIP-15): sent after historical events for a REQ
+- COUNT (NIP-45): ["COUNT", subId, { count }]
+
+See the canonical NIPs list: https://github.com/nostr-protocol/nips
+
+## HTTP API
+- GET /health -> { status: "ok" }
+- GET /ready -> checks DB connectivity
+- GET /.well-known/nostr.json -> NIP-11 relay info (CORS enabled)
+- HEAD/OPTIONS /.well-known/nostr.json -> preflight/probes
+- GET /metrics -> Prometheus exposition
+- POST /events -> Minimal HTTP ingestion (for tests/tools)
+- GET /debug/nip11 -> Effective NIP-11 payload + select env (debug)
+
+## Configuration (env vars)
+- PORT: default 8080
+- HOST: default 0.0.0.0
+- DATABASE_URL, REDIS_URL
+- RELAY_NAME, RELAY_DESCRIPTION
+- RELAY_CONTACT: email/identifier advertised in NIP-11
+- RELAY_PUBKEY: hex pubkey advertised in NIP-11
+- MAX_MESSAGE_SIZE: JSON body limit (bytes), affects Express and NIP-11 limitation
+- REQUIRE_AUTH_FOR_WRITE: "true" to enforce NIP-42 for EVENT (default "false")
+- MAX_FILTERS: cap number of filters per REQ/COUNT (default 20)
+- MAX_LIMIT: cap per-filter limit (default 500)
+- RATE_LIMIT, RATE_LIMIT_WINDOW_MS: simple HTTP rate limiting knobs (if enabled)
+- RUN_MIGRATIONS: "1" to run dist/scripts/migrate.js at start (default "0")
+
+NIP-96 service (sidecar):
+- PORT (default 3001), STORAGE_METHOD(local|s3), BASE_URL, MAX_FILE_SIZE
+- AWS_REGION, S3_BUCKET_NAME (for S3)
+
+## Prometheus metrics
+Emitted counters/gauges/histograms:
+- http_requests_total{method,route,status}
+- http_request_duration_seconds{method,route,status}
+- ws_connections (gauge), ws_messages_total
+- events_ingested_total
+- query_duration_seconds (DB for REQ/COUNT)
+- db_up, redis_up
+- nip11_requests_total{status}, nip11_last_success_timestamp
+- message_count (compat), delivery_latency_seconds, file_upload_size_bytes
+
+## Reverse proxy (Caddy) example
+```
+:443 {
+  tls you@example.com
+  encode zstd gzip
+  @nostr path /.well-known/nostr.json
+  route @nostr {
+    header {
+      Access-Control-Allow-Origin "*"
+      Access-Control-Allow-Methods "GET, OPTIONS, HEAD"
+      Access-Control-Allow-Headers "Content-Type, Accept"
+    }
+    reverse_proxy nostr-relay:8080
+  }
+  route {
+    reverse_proxy nostr-relay:8080 {
+      header_up Connection {>Connection}
+      header_up Upgrade {>Upgrade}
+    }
+  }
+}
+```
+
+## Testing
+```bash
+npm install
+npm run build
+npm test
+```
+- Unit/integration tests live under tests/**.test.ts and **.spec.ts
+
+## FAQ / Troubleshooting
+- “Failed to fetch” NIP-11
+  - Use /.well-known/nostr.json, ensure proxy forwards GET/HEAD/OPTIONS and CORS
+- “No relay acknowledgement”
+  - Set REQUIRE_AUTH_FOR_WRITE=false if client doesn’t implement NIP-42
+  - Relay always replies ["OK", <id>, <accepted>, <msg>] to EVENT
+- Duplicate key on insert
+  - Inserts are idempotent (ON CONFLICT DO NOTHING). Safe to ignore; client still gets OK
+- Migrations syntax error near WHERE
+  - See “Fix migration syntax error (near WHERE)” below
+
+## Fix migration syntax error (near WHERE)
+
+If the container logs show “Error running migrations: syntax error at or near WHERE”, your SQL migration has a stray WHERE or duplicated index blocks. Update your migration (e.g., src/storage/postgres/migrations/001_init.sql) to use this tag-array trigger/function and keep only one set of unique indexes:
+
+```sql
+-- filepath: src/storage/postgres/migrations/001_init.sql
+-- Ensure helper columns exist
+ALTER TABLE nostr_events
+  ADD COLUMN IF NOT EXISTS e_tags text[],
+  ADD COLUMN IF NOT EXISTS p_tags text[];
+
+-- Set e_tags/p_tags from JSONB tags
+CREATE OR REPLACE FUNCTION nostr_events_update_tag_arrays()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.e_tags := (
+    SELECT array_agg(elem->>1)
+    FROM jsonb_array_elements(NEW.tags) AS elem
+    WHERE elem->>0 = 'e'
+  );
+  NEW.p_tags := (
+    SELECT array_agg(elem->>1)
+    FROM jsonb_array_elements(NEW.tags) AS elem
+    WHERE elem->>0 = 'p'
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS nostr_events_set_tag_arrays ON nostr_events;
+CREATE TRIGGER nostr_events_set_tag_arrays
+BEFORE INSERT OR UPDATE OF tags ON nostr_events
+FOR EACH ROW
+EXECUTE FUNCTION nostr_events_update_tag_arrays();
+
+-- Indexes for tag lookups
+CREATE INDEX IF NOT EXISTS idx_events_e_tags_gin ON nostr_events USING GIN (e_tags);
+CREATE INDEX IF NOT EXISTS idx_events_p_tags_gin ON nostr_events USING GIN (p_tags);
+
+-- Keep one set of unique indexes only (remove duplicates if present)
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_replaceable_pubkey_kind
+  ON nostr_events (pubkey, kind)
+  WHERE kind IN (0,3) AND deleted = FALSE;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_param_replaceable
+  ON nostr_events (pubkey, kind, d_tag)
+  WHERE kind BETWEEN 30000 AND 39999 AND d_tag IS NOT NULL AND deleted = FALSE;
+```
+
+After updating the SQL, restart the stack:
+```bash
+docker restart nostr-relay
+# or re-pull/recreate if needed:
+# docker stop nostr-relay && docker rm nostr-relay
+# docker pull taksa1990/nostr-relay:latest
+# docker run -d --name nostr-relay --network nostr-net -p 8080:8080 \
+#   -e NODE_ENV=production -e PORT=8080 \
+#   -e DATABASE_URL=postgres://user:password@postgres:5432/nostr \
+#   -e REDIS_URL=redis://redis:6379 \
+#   taksa1990/nostr-relay:latest
+```

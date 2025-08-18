@@ -60,6 +60,8 @@ function ensureLiveFeed() {
 }
 
 export const handleWebSocketConnection = (ws: WebSocket) => {
+    const cid = Math.random().toString(36).slice(2, 10);
+    logInfo(`WS open cid=${cid}`);
     // Issue AUTH challenge on connect (NIP-42)
     issueAuthChallenge(ws);
     const repo = new PostgresRepository(process.env.DATABASE_URL as string);
@@ -183,13 +185,13 @@ export const handleWebSocketConnection = (ws: WebSocket) => {
             sendNotice(ws, 'unrecognized-message');
             return;
         } catch (error: any) {
-            logError(`Error handling message: ${error?.message || String(error)}`);
+            logError(`WS error cid=${cid} ${error?.message || String(error)}`);
             ws.send(JSON.stringify(["OK", "", false, "server-error"]));
         }
     });
 
     ws.on('close', () => {
-        logInfo('WebSocket connection closed');
+        logInfo(`WS close cid=${cid}`);
         clearInterval(pingTimer);
         allSockets.delete(ws);
         liveSubs.delete(ws);
