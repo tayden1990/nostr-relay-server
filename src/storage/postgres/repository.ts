@@ -135,9 +135,9 @@ export class PostgresRepository {
                 );
             }
 
-            // Store incoming event (including deletion events)
+            // Store incoming event (idempotent insert)
             await client.query(
-              'INSERT INTO nostr_events (id, kind, pubkey, created_at, content, tags, deleted, expires_at, d_tag) VALUES ($1,$2,$3,$4,$5,$6,FALSE,$7,$8)',
+              'INSERT INTO nostr_events (id, kind, pubkey, created_at, content, tags, deleted, expires_at, d_tag) VALUES ($1,$2,$3,$4,$5,$6,FALSE,$7,$8) ON CONFLICT (id) DO NOTHING',
               [event.id, event.kind, event.pubkey, event.created_at, event.content, JSON.stringify(event.tags || []), expiresAt, dTag]
             );
 
