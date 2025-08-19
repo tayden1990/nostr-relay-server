@@ -10,15 +10,18 @@
 		header Upgrade websocket
 	}
 	reverse_proxy @websocket nostr-relay:8080
-	handle_path /nip96* {
+
+	# Send full path to nip96 (do not strip)
+	handle /nip96* {
 		reverse_proxy nip96:3001
 	}
-	handle_path /upload* {
+	handle /upload* {
 		reverse_proxy nip96:3001
 	}
-	handle_path /media/* {
+	handle /media/* {
 		reverse_proxy nip96:3001
 	}
+
 	handle {
 		# Forward all other HTTP requests (including /nip11, /.well-known/nostr.json) to the relay app
 		reverse_proxy nostr-relay:8080
@@ -35,15 +38,18 @@
 	reverse_proxy @websocket nostr-relay:8080
 	# For local/dev you can use internal CA; for production with a real domain, remove this line
 	tls internal
-	handle_path /nip96* {
+
+	# Send full path to nip96 (do not strip)
+	handle /nip96* {
 		reverse_proxy nip96:3001
 	}
-	handle_path /upload* {
+	handle /upload* {
 		reverse_proxy nip96:3001
 	}
-	handle_path /media/* {
+	handle /media/* {
 		reverse_proxy nip96:3001
 	}
+
 	handle {
 		# Forward all other HTTPS requests to the relay app
 		reverse_proxy nostr-relay:8080
