@@ -19,26 +19,27 @@ const TMP_DIR = (process.env.UPLOAD_TMP_DIR || os.tmpdir()).toString();
 
 // Multer: write to disk to avoid large memory buffers
 const upload = multer({
-    storage: multer.diskStorage({
-        destination: (_req, _file, cb) => cb(null, TMP_DIR),
-        filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
+    storage: (multer as any).diskStorage({
+        destination: (_req: express.Request, _file: any, cb: (err: any, dest: string) => void) => cb(null, TMP_DIR),
+        filename: (_req: express.Request, file: any, cb: (err: any, filename: string) => void) => cb(null, `${Date.now()}-${file.originalname}`)
     }),
     limits: { fileSize: MAX_FILE_SIZE },
 });
 
 router.post('/upload', upload.single('file'), async (req, res) => {
     try {
-        if (!req.file) {
+        const file: any = (req as any).file;
+        if (!file) {
             return res.status(400).json({ error: 'No file provided' });
         }
-        const tempPath = (req.file as any).path as string;
-        const ext = (req.file.originalname.split('.').pop() || '').toLowerCase();
+        const tempPath = (file.path as string) || '';
+        const ext = (file.originalname.split('.').pop() || '').toLowerCase();
         const key = `${uuidv4()}${ext ? '.' + ext : ''}`;
 
         let url: string;
         if (storageMethod === 's3') {
             const stream = fs.createReadStream(tempPath);
-            url = await uploadBufferToS3(stream, req.file.mimetype, key);
+            url = await uploadBufferToS3(stream, file.mimetype, key);
             // cleanup temp file
             try { await fsp.unlink(tempPath); } catch {}
         } else {
@@ -50,7 +51,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
             url = `${prefix}/media/${key}`;
         }
 
-        return res.status(200).json({ url, size: req.file.size, type: req.file.mimetype, name: req.file.originalname });
+        return res.status(200).json({ url, size: file.size, type: file.mimetype, name: file.originalname });
     } catch (err: any) {
         return res.status(500).json({ error: err?.message || 'Upload failed' });
     }
