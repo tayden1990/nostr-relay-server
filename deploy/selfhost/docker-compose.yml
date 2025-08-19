@@ -6,12 +6,12 @@ services:
       context: https://github.com/tayden1990/nostr-relay-server.git#main
       dockerfile: Dockerfile
     environment:
-      - NODE_ENV=production
-      - PORT=8080
-      - DATABASE_URL=postgres://user:password@postgres:5432/nostr
-      - REDIS_URL=redis://redis:6379
-      - RELAY_NAME="MATRUS NOSTR FREE Relay"
-      - RELAY_DESCRIPTION="Frre forever with Matrus"
+      NODE_ENV: "production"
+      PORT: "8080"
+      DATABASE_URL: "postgres://user:password@postgres:5432/nostr"
+      REDIS_URL: "redis://redis:6379"
+      RELAY_NAME: "MATRUS NOSTR FREE Relay"
+      RELAY_DESCRIPTION: "Frre forever with Matrus"
     expose:
       - "8080"
     ports:
@@ -43,14 +43,16 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      - PORT=3001
-      - STORAGE_METHOD=local
-      - BASE_URL=https://relay1.matrus.org
-      - LOCAL_DIR=/data/uploads
-      - NIP98_REQUIRED=false
+      PORT: "3001"
+      STORAGE_METHOD: "local"
+      BASE_URL: "https://relay1.matrus.org"
+      LOCAL_DIR: "/data/uploads"
+      UPLOAD_TMP_DIR: "/data/uploads/tmp"
+      NIP98_REQUIRED: "false"
     expose:
       - "3001"
     ports:
       - "127.0.0.1:3001:3001"
     volumes:
       - ./data/uploads:/data/uploads
+      - ./data/uploads/tmp:/data/uploads/tmp

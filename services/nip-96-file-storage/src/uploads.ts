@@ -17,6 +17,15 @@ const storageMethod = (process.env.STORAGE_METHOD || process.env.STORAGE_TYPE ||
 // Temp dir for incoming files (defaults to OS tmp)
 const TMP_DIR = (process.env.UPLOAD_TMP_DIR || os.tmpdir()).toString();
 
+// Ensure temp directory exists when using disk storage
+try {
+    if (!fs.existsSync(TMP_DIR)) {
+        fs.mkdirSync(TMP_DIR, { recursive: true });
+    }
+} catch {
+    // ignore
+}
+
 // Multer: write to disk to avoid large memory buffers
 const upload = multer({
     storage: (multer as any).diskStorage({
@@ -46,7 +55,26 @@ router.post('/upload', upload.single('file'), async (req, res) => {
             // local storage: move temp file directly into media dir (no buffering)
             try { await fsp.mkdir(LOCAL_STORAGE_DIR, { recursive: true }); } catch {}
             const dest = path.join(LOCAL_STORAGE_DIR, key);
-            await fsp.rename(tempPath, dest);
+            // Prefer rename for performance; if cross-device (EXDEV), fall back to copy+unlink
+            try {
+                await fsp.rename(tempPath, dest);
+            } catch (err: any) {
+                const msg = String(err?.message || '');
+                if ((err && (err as any).code === 'EXDEV') || /cross-device/i.test(msg)) {
+                    // Copy stream to avoid loading whole file in memory
+                    await new Promise<void>((resolve, reject) => {
+                        const rd = fs.createReadStream(tempPath);
+                        const wr = fs.createWriteStream(dest);
+                        rd.on('error', reject);
+                        wr.on('error', reject);
+                        wr.on('close', () => resolve());
+                        rd.pipe(wr);
+                    });
+                    try { await fsp.unlink(tempPath); } catch {}
+                } else {
+                    throw err;
+                }
+            }
             const prefix = BASE_URL ? BASE_URL.replace(/\/$/, '') : '';
             url = `${prefix}/media/${key}`;
         }
