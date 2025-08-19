@@ -42,17 +42,17 @@ services:
       context: "https://github.com/tayden1990/nostr-relay-server.git#main:services/nip-96-file-storage"
       dockerfile: Dockerfile
     restart: unless-stopped
-  environment:
-    PORT: "3001"
-    STORAGE_METHOD: "local"
-    BASE_URL: "https://relay1.matrus.org"
-    LOCAL_DIR: "/data/uploads"
-    UPLOAD_TMP_DIR: "/data/uploads/tmp"
-    ALWAYS_COPY_UPLOADS: "true"
-    NIP98_REQUIRED: "false"
-  expose:
-    - "3001"
-  ports:
-    - "127.0.0.1:3001:3001"
-  volumes:
-    - ./data/uploads:/data/uploads
+    environment:
+      PORT: "3001"
+      STORAGE_METHOD: "local"
+      BASE_URL: "https://relay1.matrus.org"
+      LOCAL_DIR: "/data/uploads"
+      UPLOAD_TMP_DIR: "/data/uploads/tmp"
+      ALWAYS_COPY_UPLOADS: "true"
+      NIP98_REQUIRED: "false"
+    expose:
+      - "3001"
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - ./data/uploads:/data/uploads
