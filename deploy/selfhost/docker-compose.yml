@@ -14,23 +14,11 @@ services:
       - RELAY_DESCRIPTION="Frre forever with Matrus"
     expose:
       - "8080"
+    ports:
+      - "127.0.0.1:8080:8080"
     depends_on:
       - postgres
       - redis
-
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./data/caddy:/data
-      - ./config/caddy:/config
-    depends_on:
-      - relay
-      - nip96
 
   postgres:
     image: postgres:13
@@ -51,8 +39,8 @@ services:
 
   nip96:
     build:
-      context: https://github.com/tayden1990/nostr-relay-server.git#main
-      dockerfile: services/nip-96-file-storage/Dockerfile
+      context: "https://github.com/tayden1990/nostr-relay-server.git#main:services/nip-96-file-storage"
+      dockerfile: Dockerfile
     restart: unless-stopped
     environment:
       - PORT=3001
@@ -62,5 +50,7 @@ services:
       - NIP98_REQUIRED=false
     expose:
       - "3001"
+    ports:
+      - "127.0.0.1:3001:3001"
     volumes:
       - ./data/uploads:/data/uploads
