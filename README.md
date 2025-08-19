@@ -11,9 +11,10 @@ A production-ready Nostr relay server written in TypeScript. It implements core 
 - Quickstart
 - Elementary step-by-step (no Compose)
 - Docker Compose
-- aaPanel setup (step-by-step)
+- Self-host (aaPanel/VPS) with NIP-96 and Nginx
 - Ports, URLs and TLS
 - Configuration (env vars)
+- Diagnostics (relay-diagnostic.ts)
 - Publish to Docker Hub and GitHub
 - Troubleshooting
 - Logging and log viewer
@@ -621,6 +622,123 @@ Notes
 - Replace nostr-relay with the container/service name or 127.0.0.1:8080 if running locally.
 - Also forward HEAD and OPTIONS unmodified; the explicit location handles them.
 - If you still see 404 from Nginx, ensure no other location blocks match before the one above (directive order matters).
+
+## Self-host (aaPanel/VPS) with NIP-96 and Nginx
+
+Use this compact Compose to run Relay + Postgres + Redis + NIP-96 locally and terminate TLS in Nginx. Relay listens on 127.0.0.1:8080, NIP-96 on 127.0.0.1:3001.
+
+```yaml
+version: "3.8"
+services:
+  relay:
+    build:
+      context: https://github.com/tayden1990/nostr-relay-server.git#main
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: "production"
+      PORT: "8080"
+      DATABASE_URL: "postgres://user:password@postgres:5432/nostr"
+      REDIS_URL: "redis://redis:6379"
+      RELAY_NAME: "YOUR RELAY NAME"
+      RELAY_DESCRIPTION: "Your relay description"
+    expose: ["8080"]
+    ports: ["127.0.0.1:8080:8080"]
+    depends_on: [postgres, redis]
+
+  postgres:
+    image: postgres:13
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: nostr
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+
+  redis:
+    image: redis:6
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ./data/redis:/data
+
+  nip96:
+    build:
+      context: "https://github.com/tayden1990/nostr-relay-server.git#main:services/nip-96-file-storage"
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: "3001"
+      STORAGE_METHOD: "local"
+      BASE_URL: "https://YOUR_DOMAIN"
+      LOCAL_DIR: "/data/uploads"
+      UPLOAD_TMP_DIR: "/data/uploads/tmp"
+      ALWAYS_COPY_UPLOADS: "true"
+      NIP98_REQUIRED: "false"
+    expose: ["3001"]
+    ports: ["127.0.0.1:3001:3001"]
+    volumes:
+      - ./data/uploads:/data/uploads
+```
+
+Nginx path routing (add inside your server block)
+```nginx
+# NIP-11
+location = /.well-known/nostr.json {
+  proxy_pass http://127.0.0.1:8080;
+  proxy_set_header Host $host;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto $scheme;
+  add_header Access-Control-Allow-Origin "*" always;
+  add_header Cache-Control "public, max-age=60" always;
+}
+
+# Health (optional explicit)
+location = /health { proxy_pass http://127.0.0.1:8080/health; }
+
+# Relay root (edit your existing location /, don't duplicate)
+location / {
+  proxy_pass http://127.0.0.1:8080;
+  proxy_http_version 1.1;
+  proxy_set_header Upgrade $http_upgrade;
+  proxy_set_header Connection "upgrade";
+  proxy_set_header Host $host;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+# NIP-96
+client_max_body_size 50m;
+location = /upload { proxy_pass http://127.0.0.1:3001/upload; }
+location ^~ /media/ { proxy_pass http://127.0.0.1:3001; }
+```
+
+Tips
+- Only one root location block should exist; edit the existing one to add WS headers.
+- Ensure UPLOAD_TMP_DIR is under LOCAL_DIR so rename works across same device, or keep ALWAYS_COPY_UPLOADS=true.
+
+## Diagnostics (relay-diagnostic.ts)
+
+Run an end-to-end probe of HTTP, WS, NIPs and optional NIP-96 upload. Requires Node 18+.
+```bash
+npm run diag -- --url https://YOUR_DOMAIN --nip96 https://YOUR_DOMAIN
+# If NIP98_REQUIRED=true for uploads:
+npm run diag -- --url https://YOUR_DOMAIN --nip96 https://YOUR_DOMAIN --auth "Nostr {signed_event_json}"
+```
+Checks covered
+- /health, NIP-11 (/.well-known/nostr.json and /nip11)
+- WS connect, publish OK (NIP-20), REQ/EVENT, EOSE (NIP-15)
+- NIP-09 delete, NIP-33 replaceable latest-wins, size limit enforcement
+- NIP-96 POST /upload -> JSON with url to /media/...
+
+Expected: 11/11 checks passed.
+
+## NIP-96 env additions
+- LOCAL_DIR: destination directory (inside container)
+- UPLOAD_TMP_DIR: temp directory; put under LOCAL_DIR to avoid EXDEV
+- ALWAYS_COPY_UPLOADS: "true" to force copy+unlink (safest default)
+- NIP98_REQUIRED: "true" to require NIP-98 Authorization for /upload
 
 ## Final aaPanel Nginx config (paste ONLY new location blocks; edit existing “/”)
 
