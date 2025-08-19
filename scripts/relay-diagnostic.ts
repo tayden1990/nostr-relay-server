@@ -190,17 +190,24 @@ async function checkNip96(nip96Base: string, timeoutMs: number): Promise<Result[
   const results: Result[] = [];
   try {
     const uploadUrl = nip96Base.replace(/\/$/, '') + '/upload';
-    const body = Buffer.from('diagnostic-file');
-    const r = await httpGet(uploadUrl, { 'Content-Type': 'application/octet-stream' }, timeoutMs);
-    // Without actual POST we can’t upload via GET; do a real fetch with POST
+    // Build multipart/form-data with field name 'file'
+    const form = new (globalThis as any).FormData();
+    const bytes = new Uint8Array([100,105,97,103]); // 'diag'
+    form.append('file', new (globalThis as any).Blob([bytes], { type: 'application/octet-stream' }), 'diag.bin');
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await (globalThis as any).fetch(uploadUrl, { method: 'POST', body, headers: { 'Content-Type': 'application/octet-stream' }, signal: controller.signal });
+      const headers: any = {};
+      const auth = argVal('auth') || process.env.NIP96_AUTH;
+      if (auth) headers['Authorization'] = auth;
+      const res = await (globalThis as any).fetch(uploadUrl, { method: 'POST', body: form, headers, signal: controller.signal });
       const text = await res.text();
       let json: any; try { json = JSON.parse(text); } catch {}
       const ok = res.status >= 200 && res.status < 300 && (json?.url || json?.id || json?.ok);
       results.push({ name: 'NIP-96 upload (POST /upload)', ok, info: { status: res.status, sample: json || text } });
+      if (res.status === 401 || res.status === 403) {
+        results.push({ name: 'NIP-96 auth hint', ok: false, info: { tip: 'Requires NIP-98 Authorization header or IP allowlist', status: res.status } });
+      }
     } finally { clearTimeout(t); }
   } catch (e: any) {
     results.push({ name: 'NIP-96 upload (POST /upload)', ok: false, error: e?.message || String(e) });
