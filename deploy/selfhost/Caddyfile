@@ -11,4 +11,6 @@ relay1.matrus.org {
 	reverse_proxy @websocket relay:8080
 	# If you enable a nip96 service, uncomment below and change the upstream
 	# reverse_proxy /upload nip96:8080
+	# Forward all other HTTP routes (including /nip11, /.well-known/nostr.json) to the relay app
+	reverse_proxy relay:8080
 }

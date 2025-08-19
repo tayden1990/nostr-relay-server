@@ -7,4 +7,6 @@ relay1.matrus.org {
   reverse_proxy @websocket relay:8080
   reverse_proxy /upload nip96:3001
   reverse_proxy /media/* nip96:3001
+  # Forward all other HTTP routes (including /nip11, /.well-known/nostr.json) to the relay app
+  reverse_proxy relay:8080
 }

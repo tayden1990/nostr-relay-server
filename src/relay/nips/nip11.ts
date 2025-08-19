@@ -19,7 +19,7 @@ type RelayInfo = {
 function isPlaceholder(v?: string | null): boolean {
     if (!v) return true;
     const s = v.trim().toLowerCase();
-    return s === 'relay1.matrus.org' || s === 'Free forever';
+    return s === 'your-relay-name-or-domain' || s === 'your relay description';
 }
 
 export function getNip11Info(host?: string): RelayInfo {
