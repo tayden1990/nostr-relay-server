@@ -7,13 +7,13 @@ services:
     #   dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      NODE_ENV: ${NODE_ENV}
-      PORT: ${PORT}
-      DATABASE_URL: ${DATABASE_URL}
-      REDIS_URL: ${REDIS_URL}
-      MAX_MESSAGE_SIZE: ${MAX_MESSAGE_SIZE}
-      RELAY_NAME: ${RELAY_NAME}
-      RELAY_DESCRIPTION: ${RELAY_DESCRIPTION}
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${PORT:-8080}
+      DATABASE_URL: ${DATABASE_URL:-postgres://user:password@postgres:5432/nostr}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      MAX_MESSAGE_SIZE: ${MAX_MESSAGE_SIZE:-2097152}
+      RELAY_NAME: "${RELAY_NAME:-MATRUS NOSTR FREE Relay}"
+      RELAY_DESCRIPTION: "${RELAY_DESCRIPTION:-Frre forever with Matrus}"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:${PORT:-8080}/health >/dev/null || exit 1"]
       interval: 30s
@@ -37,12 +37,12 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      PORT: ${NIP96_PORT}
-      STORAGE_METHOD: ${STORAGE_METHOD}
-      MAX_FILE_SIZE: ${MAX_FILE_SIZE}
-      LOCAL_DIR: ${LOCAL_DIR}
-      BASE_URL: ${BASE_URL}
-      NIP98_REQUIRED: ${NIP98_REQUIRED}
+      PORT: ${NIP96_PORT:-3001}
+      STORAGE_METHOD: ${STORAGE_METHOD:-local}
+      MAX_FILE_SIZE: ${MAX_FILE_SIZE:-10485760}
+      LOCAL_DIR: ${LOCAL_DIR:-/data/uploads}
+      BASE_URL: "${BASE_URL:-https://relay1.matrus.org}"
+      NIP98_REQUIRED: "${NIP98_REQUIRED:-false}"
     expose:
       - "3001"
     volumes:
@@ -61,7 +61,7 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      DOMAIN: ${DOMAIN}
+      DOMAIN: "${DOMAIN:-relay1.matrus.org}"
     volumes:
       - ../Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
