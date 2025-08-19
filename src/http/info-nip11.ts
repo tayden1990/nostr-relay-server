@@ -15,7 +15,9 @@ export const infoNip11 = (req: Request, res: Response) => {
     const ua = req.get('user-agent') || '';
     const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket.remoteAddress || '';
     try {
-        const nip11Info = getNip11Info(); // includes optional pubkey if RELAY_PUBKEY is set
+        const h = (req.headers['x-forwarded-host'] as string) || req.headers.host || req.hostname || '';
+        const host = String(h).split(':')[0];
+        const nip11Info = getNip11Info(host);
         // NIP-11: set application/nostr+json and allow cross-origin requests
         res.set('Content-Type', 'application/nostr+json; charset=utf-8');
         setCors(res);

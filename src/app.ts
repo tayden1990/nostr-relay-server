@@ -3,12 +3,11 @@ import http from 'http';
 import WebSocket from 'ws';
 import { healthCheck } from './http/health';
 import client from 'prom-client';
-import { infoNip11 } from './http/info-nip11';
 import { PostgresRepository } from './storage/postgres/repository';
 import { ingestEvent } from './relay/events/ingest';
 import { validateEvent } from './relay/events/validate';
 import { handleWebSocketConnection } from './ws/handler';
-import { observeHttpRequest, setDbUp, recordMessageProcessed, recordEventIngested } from './utils/metrics';
+import { observeHttpRequest, setDbUp, recordMessageProcessed, recordEventIngested, incNip11 } from './utils/metrics';
 import { getNip11Info } from './relay/nips/nip11';
 import { listLogFiles, readLog, getLogDir, logInfo, logError } from './utils/logger';
 import crypto from 'crypto';
@@ -79,6 +78,23 @@ app.options('/.well-known/nostr.json', (_req, res) => {
     res.set('Access-Control-Allow-Origin', '*');
     res.set('Access-Control-Allow-Methods', 'GET, OPTIONS, HEAD');
     res.set('Access-Control-Allow-Headers', 'Content-Type, Accept');
+    res.set('Access-Control-Max-Age', '600');
+    res.sendStatus(204);
+});
+
+// Add preflight for alias endpoints too
+app.options('/nostr.json', (_req, res) => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'GET, OPTIONS, HEAD');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Accept');
+    res.set('Access-Control-Max-Age', '600');
+    res.sendStatus(204);
+});
+app.options('/nip11', (_req, res) => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'GET, OPTIONS, HEAD');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Accept');
+    res.set('Access-Control-Max-Age', '600');
     res.sendStatus(204);
 });
 
@@ -89,14 +105,40 @@ app.head('/.well-known/nostr.json', (_req, res) => {
     res.set('Cache-Control', 'public, max-age=60');
     res.status(200).end();
 });
+// Add HEAD for alias endpoints too
+app.head('/nostr.json', (_req, res) => {
+    res.set('Content-Type', 'application/nostr+json; charset=utf-8');
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Cache-Control', 'public, max-age=60');
+    res.status(200).end();
+});
+app.head('/nip11', (_req, res) => {
+    res.set('Content-Type', 'application/nostr+json; charset=utf-8');
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Cache-Control', 'public, max-age=60');
+    res.status(200).end();
+});
 
-// NIP-11 info endpoints
-app.get('/.well-known/nostr.json', infoNip11);
-// Compatibility aliases
-app.get('/nostr.json', infoNip11);
-app.get('/nip11', infoNip11);
-// Alias used by tests and some tools
-app.get('/info-nip11', infoNip11);
+// NIP-11 info endpoints (wrap with metrics)
+const handleNip11 = (req: express.Request, res: express.Response) => {
+    try {
+        const h = (req.headers['x-forwarded-host'] as string) || req.headers.host || req.hostname || '';
+        const host = String(h).split(':')[0];
+        const info = getNip11Info(host);
+        res.set('Content-Type', 'application/nostr+json; charset=utf-8');
+        res.set('Access-Control-Allow-Origin', '*');
+        res.set('Cache-Control', 'public, max-age=60');
+        incNip11(true);
+        return res.json(info);
+    } catch (e: any) {
+        incNip11(false);
+        return res.status(500).json({ error: 'nip11-failed' });
+    }
+};
+app.get('/.well-known/nostr.json', handleNip11);
+app.get('/nostr.json', handleNip11);
+app.get('/nip11', handleNip11);
+app.get('/info-nip11', handleNip11);
 
 // Debug endpoint for NIP-11 values (do not use in production if you don’t want env leak)
 app.get('/debug/nip11', (_req, res) => {
@@ -149,6 +191,9 @@ Useful endpoints:
 `
       );
 });
+
+// Reduce favicon 404 noise
+app.get('/favicon.ico', (_req, res) => res.status(204).end());
 
 // Logs: simple HTML UI
 app.get('/logs', async (_req, res) => {

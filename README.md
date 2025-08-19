@@ -574,83 +574,94 @@ Emitted counters/gauges/histograms:
 }
 ```
 
-## Testing
-```bash
-npm install
-npm run build
-npm test
+## Reverse proxy (Nginx) example
+
+Important: many Nginx templates block “dotfiles” via location ~ /\. which unintentionally blocks /.well-known/nostr.json. Add an explicit exception BEFORE any dotfile/regex deny blocks.
+
 ```
-- Unit/integration tests live under tests/**.test.ts and **.spec.ts
+server {
+  listen 80;
+  server_name YOUR_HOST;
 
-## FAQ / Troubleshooting
-- “Failed to fetch” NIP-11
-  - Use /.well-known/nostr.json, ensure proxy forwards GET/HEAD/OPTIONS and CORS
-- “No relay acknowledgement”
-  - Set REQUIRE_AUTH_FOR_WRITE=false if client doesn’t implement NIP-42
-  - Relay always replies ["OK", <id>, <accepted>, <msg>] to EVENT
-- Duplicate key on insert
-  - Inserts are idempotent (ON CONFLICT DO NOTHING). Safe to ignore; client still gets OK
-- Migrations syntax error near WHERE
-  - See “Fix migration syntax error (near WHERE)” below
+  # If you have TLS, use listen 443 ssl http2; and your ssl_* directives.
 
-## Fix migration syntax error (near WHERE)
+  # 1) NIP-11: forward /.well-known/nostr.json explicitly (CORS + cache ok)
+  location = /.well-known/nostr.json {
+    proxy_pass http://nostr-relay:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
 
-If the container logs show “Error running migrations: syntax error at or near WHERE”, your SQL migration has a stray WHERE or duplicated index blocks. Update your migration (e.g., src/storage/postgres/migrations/001_init.sql) to use this tag-array trigger/function and keep only one set of unique indexes:
+    # Optional: surface CORS from proxy (the app also sets these)
+    add_header Access-Control-Allow-Origin "*" always;
+    add_header Access-Control-Allow-Methods "GET, OPTIONS, HEAD" always;
+    add_header Access-Control-Allow-Headers "Content-Type, Accept" always;
+    add_header Cache-Control "public, max-age=60" always;
+  }
 
-```sql
--- filepath: src/storage/postgres/migrations/001_init.sql
--- Ensure helper columns exist
-ALTER TABLE nostr_events
-  ADD COLUMN IF NOT EXISTS e_tags text[],
-  ADD COLUMN IF NOT EXISTS p_tags text[];
+  # 2) WebSocket + HTTP to relay
+  location / {
+    proxy_pass http://nostr-relay:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
 
--- Set e_tags/p_tags from JSONB tags
-CREATE OR REPLACE FUNCTION nostr_events_update_tag_arrays()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.e_tags := (
-    SELECT array_agg(elem->>1)
-    FROM jsonb_array_elements(NEW.tags) AS elem
-    WHERE elem->>0 = 'e'
-  );
-  NEW.p_tags := (
-    SELECT array_agg(elem->>1)
-    FROM jsonb_array_elements(NEW.tags) AS elem
-    WHERE elem->>0 = 'p'
-  );
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS nostr_events_set_tag_arrays ON nostr_events;
-CREATE TRIGGER nostr_events_set_tag_arrays
-BEFORE INSERT OR UPDATE OF tags ON nostr_events
-FOR EACH ROW
-EXECUTE FUNCTION nostr_events_update_tag_arrays();
-
--- Indexes for tag lookups
-CREATE INDEX IF NOT EXISTS idx_events_e_tags_gin ON nostr_events USING GIN (e_tags);
-CREATE INDEX IF NOT EXISTS idx_events_p_tags_gin ON nostr_events USING GIN (p_tags);
-
--- Keep one set of unique indexes only (remove duplicates if present)
-CREATE UNIQUE INDEX IF NOT EXISTS uniq_replaceable_pubkey_kind
-  ON nostr_events (pubkey, kind)
-  WHERE kind IN (0,3) AND deleted = FALSE;
-
-CREATE UNIQUE INDEX IF NOT EXISTS uniq_param_replaceable
-  ON nostr_events (pubkey, kind, d_tag)
-  WHERE kind BETWEEN 30000 AND 39999 AND d_tag IS NOT NULL AND deleted = FALSE;
+  # 3) If your config has a "deny dotfiles" rule, keep it AFTER the /.well-known block.
+  # location ~ /\. {
+  #   deny all;
+  # }
+}
 ```
 
-After updating the SQL, restart the stack:
-```bash
-docker restart nostr-relay
-# or re-pull/recreate if needed:
-# docker stop nostr-relay && docker rm nostr-relay
-# docker pull taksa1990/nostr-relay:latest
-# docker run -d --name nostr-relay --network nostr-net -p 8080:8080 \
-#   -e NODE_ENV=production -e PORT=8080 \
-#   -e DATABASE_URL=postgres://user:password@postgres:5432/nostr \
-#   -e REDIS_URL=redis://redis:6379 \
-#   taksa1990/nostr-relay:latest
+Notes
+- Replace nostr-relay with the container/service name or 127.0.0.1:8080 if running locally.
+- Also forward HEAD and OPTIONS unmodified; the explicit location handles them.
+- If you still see 404 from Nginx, ensure no other location blocks match before the one above (directive order matters).
+
+## Final aaPanel Nginx config (paste ONLY new location blocks; edit existing “/”)
+
+Add these new blocks inside your existing server { }:
 ```
+# Exact NIP-11 (add)
+location = /.well-known/nostr.json {
+  proxy_pass http://127.0.0.1:8080;
+  proxy_set_header Host $host;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto $scheme;
+  proxy_cache relay1_matrus_org_cache;
+  proxy_cache_valid 200 1m;
+  add_header X-Cache $upstream_cache_status always;
+  add_header Access-Control-Allow-Origin "*" always;
+  add_header Access-Control-Allow-Methods "GET, OPTIONS, HEAD" always;
+  add_header Access-Control-Allow-Headers "Content-Type, Accept" always;
+  add_header Cache-Control "public, max-age=60" always;
+}
+
+# Optional aliases (add)
+location = /nostr.json { proxy_pass http://127.0.0.1:8080; }
+location = /nip11      { proxy_pass http://127.0.0.1:8080; }
+```
+
+Edit your existing root block (do NOT add a second “location /”). Ensure these lines are present inside it:
+```
+proxy_pass http://127.0.0.1:8080;
+proxy_http_version 1.1;
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection "upgrade";
+proxy_set_header Host $http_host;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_connect_timeout 60s;
+proxy_send_timeout 600s;
+proxy_read_timeout 600s;
+```
+
+Tip
+- Error “duplicate location "/"” means you pasted a second root block. Remove the new one and only edit the original root block.
+- Restart Nginx after saving and test:
+  - curl -i https://YOUR_DOMAIN/.well-known/nostr.json
+  - curl -I https://YOUR_DOMAIN/.well-known/nostr.json
