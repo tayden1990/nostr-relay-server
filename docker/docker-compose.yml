@@ -33,8 +33,8 @@ services:
 
   nip96:
     build:
-      context: ../services/nip-96-file-storage
-      dockerfile: Dockerfile
+      context: https://github.com/tayden1990/nostr-relay-server.git#main
+      dockerfile: services/nip-96-file-storage/Dockerfile
     restart: unless-stopped
     environment:
       PORT: ${NIP96_PORT:-3001}
