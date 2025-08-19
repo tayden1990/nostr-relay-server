@@ -13,7 +13,7 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       MAX_MESSAGE_SIZE: ${MAX_MESSAGE_SIZE:-2097152}
       RELAY_NAME: "${RELAY_NAME:-MATRUS NOSTR FREE Relay}"
-      RELAY_DESCRIPTION: "${RELAY_DESCRIPTION:-Frre forever with Matrus}"
+      RELAY_DESCRIPTION: "${RELAY_DESCRIPTION:-Free forever with Matrus}"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:${PORT:-8080}/health >/dev/null || exit 1"]
       interval: 30s
