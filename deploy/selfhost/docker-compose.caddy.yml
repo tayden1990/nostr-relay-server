@@ -1,0 +1,67 @@
+services:
+  postgres:
+    image: postgres:13
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: nostr
+    volumes:
+      - /srv/nostr/pgdata:/var/lib/postgresql/data
+    networks: [nostr-net]
+
+  redis:
+    image: redis:6
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - /srv/nostr/redis:/data
+    networks: [nostr-net]
+
+  relay:
+    image: taksa1990/nostr-relay:latest
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      DATABASE_URL: postgres://user:password@postgres:5432/nostr
+      REDIS_URL: redis://redis:6379
+      RELAY_NAME: MATRUS NOSTR FREE Relay
+      RELAY_DESCRIPTION: Frre forever with Matrus
+      MAX_MESSAGE_SIZE: 2097152
+    depends_on: [postgres, redis]
+    networks: [nostr-net]
+
+  nip96:
+    build:
+      context: https://github.com/tayden1990/nostr-relay-server.git#main
+      dockerfile: services/nip-96-file-storage/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: 3001
+      STORAGE_METHOD: local
+      BASE_URL: https://relay1.matrus.org
+      LOCAL_DIR: /data/uploads
+      NIP98_REQUIRED: "false"
+    volumes:
+      - /srv/nostr/uploads:/data/uploads
+    networks: [nostr-net]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /srv/nostr/Caddyfile:/etc/caddy/Caddyfile:ro
+      - /srv/nostr/caddy-data:/data
+      - /srv/nostr/caddy-config:/config
+    depends_on:
+      - relay
+      - nip96
+    networks: [nostr-net]
+
+networks:
+  nostr-net:
+    external: true
