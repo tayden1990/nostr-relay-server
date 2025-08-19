@@ -15,6 +15,7 @@ let globalPubSub: PubSub | undefined;
 const REQUIRE_AUTH_FOR_WRITE = String(process.env.REQUIRE_AUTH_FOR_WRITE || 'false').toLowerCase() === 'true';
 const MAX_FILTERS = Number(process.env.MAX_FILTERS || 20);
 const MAX_LIMIT = Number(process.env.MAX_LIMIT || 500);
+const MAX_MESSAGE_SIZE = Number(process.env.MAX_MESSAGE_SIZE || 1024 * 1024);
 
 function sendNotice(ws: WebSocket, text: string) {
     try { ws.send(JSON.stringify(["NOTICE", text])); } catch {}
@@ -79,7 +80,10 @@ export const handleWebSocketConnection = (ws: WebSocket) => {
         try { ws.ping(); } catch {}
     }, 30000);
 
-    ws.on('message', async (message: WebSocket.Data) => {
+    // Serialize message handling per-connection to preserve ordering and avoid races
+    let queue = Promise.resolve();
+    ws.on('message', (message: WebSocket.Data) => {
+        queue = queue.then(async () => {
         incWsMessages();
         try {
             const text = typeof message === 'string' ? message : message.toString();
@@ -169,6 +173,16 @@ export const handleWebSocketConnection = (ws: WebSocket) => {
                     ws.send(JSON.stringify(["OK", id, false, "invalid-event"]));
                     return;
                 }
+                // Enforce size limit on event content
+                try {
+                    const size = Buffer.byteLength(typeof evt.content === 'string' ? evt.content : JSON.stringify(evt.content || ''), 'utf8');
+                    if (size > MAX_MESSAGE_SIZE) {
+                        ws.send(JSON.stringify(["OK", id, false, "too-large"]));
+                        return;
+                    }
+                } catch {
+                    // if content cannot be measured, let validation fail elsewhere
+                }
                 try {
                     await ingestEvent(evt);
                     recordMessageProcessed();
@@ -188,6 +202,10 @@ export const handleWebSocketConnection = (ws: WebSocket) => {
             logError(`WS error cid=${cid} ${error?.message || String(error)}`);
             ws.send(JSON.stringify(["OK", "", false, "server-error"]));
         }
+        }).catch((err: any) => {
+            logError(`WS queue error cid=${cid} ${err?.message || String(err)}`);
+            try { ws.send(JSON.stringify(["OK", "", false, "server-error"])); } catch {}
+        });
     });
 
     ws.on('close', () => {

@@ -11,6 +11,8 @@
 	}
 	reverse_proxy @websocket nostr-relay:8080
 	reverse_proxy /nip96* nip96:3001
+	reverse_proxy /upload nip96:3001
+	reverse_proxy /media/* nip96:3001
 	# Forward all other HTTP requests (including /nip11, /.well-known/nostr.json) to the relay app
 	reverse_proxy nostr-relay:8080
 }
@@ -24,6 +26,8 @@
 	}
 	reverse_proxy @websocket nostr-relay:8080
 	reverse_proxy /nip96* nip96:3001
+	reverse_proxy /upload nip96:3001
+	reverse_proxy /media/* nip96:3001
 	# For local/dev you can use internal CA; for production with a real domain, remove this line
 	tls internal
 	# Forward all other HTTPS requests to the relay app
