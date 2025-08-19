@@ -16,6 +16,8 @@ const BASE_URL = (process.env.BASE_URL || '').trim();
 const storageMethod = (process.env.STORAGE_METHOD || process.env.STORAGE_TYPE || 'local').toLowerCase();
 // Temp dir for incoming files (defaults to OS tmp)
 const TMP_DIR = (process.env.UPLOAD_TMP_DIR || os.tmpdir()).toString();
+// Option to force copy+unlink instead of rename (for tricky filesystems)
+const ALWAYS_COPY = String(process.env.ALWAYS_COPY_UPLOADS || 'false').toLowerCase() === 'true';
 
 // Ensure temp directory exists when using disk storage
 try {
@@ -55,24 +57,31 @@ router.post('/upload', upload.single('file'), async (req, res) => {
             // local storage: move temp file directly into media dir (no buffering)
             try { await fsp.mkdir(LOCAL_STORAGE_DIR, { recursive: true }); } catch {}
             const dest = path.join(LOCAL_STORAGE_DIR, key);
-            // Prefer rename for performance; if cross-device (EXDEV), fall back to copy+unlink
-            try {
-                await fsp.rename(tempPath, dest);
-            } catch (err: any) {
-                const msg = String(err?.message || '');
-                if ((err && (err as any).code === 'EXDEV') || /cross-device/i.test(msg)) {
-                    // Copy stream to avoid loading whole file in memory
-                    await new Promise<void>((resolve, reject) => {
-                        const rd = fs.createReadStream(tempPath);
-                        const wr = fs.createWriteStream(dest);
-                        rd.on('error', reject);
-                        wr.on('error', reject);
-                        wr.on('close', () => resolve());
-                        rd.pipe(wr);
-                    });
-                    try { await fsp.unlink(tempPath); } catch {}
-                } else {
-                    throw err;
+            // Prefer rename for performance unless ALWAYS_COPY is set; on EXDEV fall back to copy+unlink
+            const copyThenUnlink = async () => {
+                await new Promise<void>((resolve, reject) => {
+                    const rd = fs.createReadStream(tempPath);
+                    const wr = fs.createWriteStream(dest);
+                    rd.on('error', reject);
+                    wr.on('error', reject);
+                    wr.on('close', () => resolve());
+                    rd.pipe(wr);
+                });
+                try { await fsp.unlink(tempPath); } catch {}
+            };
+
+            if (ALWAYS_COPY) {
+                await copyThenUnlink();
+            } else {
+                try {
+                    await fsp.rename(tempPath, dest);
+                } catch (err: any) {
+                    const msg = String(err?.message || '');
+                    if ((err && (err as any).code === 'EXDEV') || /cross-device/i.test(msg)) {
+                        await copyThenUnlink();
+                    } else {
+                        throw err;
+                    }
                 }
             }
             const prefix = BASE_URL ? BASE_URL.replace(/\/$/, '') : '';
