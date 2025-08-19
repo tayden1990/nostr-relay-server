@@ -8,7 +8,8 @@
     "build": "tsc",
     "test": "jest --runInBand",
     "migrate": "ts-node scripts/migrate.ts",
-    "seed": "ts-node scripts/seed.ts"
+  "seed": "ts-node scripts/seed.ts",
+  "diag": "ts-node scripts/relay-diagnostic.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.633.0",
