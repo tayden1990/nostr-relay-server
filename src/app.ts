@@ -192,7 +192,7 @@ app.get('/.well-known/nostr/nip96.json', (_req, res) => {
             plans: {
                 free: {
                     name: "Free Tier - Unlimited",
-                    is_nip98_required: false, // No authentication required for free usage
+                    is_nip98_required: true, // NIP-98 authentication required for uploads
                     max_byte_size: Number(process.env.MAX_FILE_SIZE || 500 * 1024 * 1024), // 500MB default instead of 50MB
                     file_expiration: [0, 0], // no expiration
                     media_transformations: {
