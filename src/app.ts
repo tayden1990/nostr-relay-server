@@ -160,6 +160,42 @@ app.get('/debug/nip11', (_req, res) => {
     }
 });
 
+// NIP-96 discovery endpoint
+app.get('/.well-known/nostr/nip96.json', (_req, res) => {
+    try {
+        const h = (_req.headers['x-forwarded-host'] as string) || _req.headers.host || _req.hostname || '';
+        const host = String(h).split(':')[0];
+        const baseUrl = `https://${host}`;
+        
+        const nip96Info = {
+            api_url: `${baseUrl}/upload`,
+            download_url: `${baseUrl}/media`,
+            supported_nips: [96, 98],
+            tos_url: "",
+            content_types: ["image/jpeg", "image/png", "image/gif", "image/webp", "video/mp4", "video/webm", "audio/mp3", "audio/wav"],
+            plans: {
+                free: {
+                    name: "Free Tier",
+                    is_nip98_required: String(process.env.NIP98_REQUIRED || 'false').toLowerCase() === 'true',
+                    max_byte_size: Number(process.env.MAX_FILE_SIZE || 50 * 1024 * 1024),
+                    file_expiration: [0, 0], // no expiration
+                    media_transformations: {
+                        image: ["resizing"]
+                    }
+                }
+            }
+        };
+        
+        res.set('Content-Type', 'application/json; charset=utf-8');
+        res.set('Access-Control-Allow-Origin', '*');
+        res.set('Cache-Control', 'public, max-age=300');
+        res.json(nip96Info);
+    } catch (e: any) {
+        logError(`nip96 discovery error ${e?.message || e}`);
+        res.status(500).json({ error: 'nip96-discovery-failed' });
+    }
+});
+
 // Minimal HTTP event ingestion (for tests/tools)
 app.post('/events', async (req, res) => {
     const evt = req.body;
