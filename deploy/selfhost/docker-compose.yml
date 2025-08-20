@@ -12,6 +12,7 @@ services:
       REDIS_URL: "redis://redis:6379"
       RELAY_NAME: "MATRUS NOSTR FREE Relay"
       RELAY_DESCRIPTION: "Frre forever with Matrus"
+      MAX_FILE_SIZE: "524288000"  # 500MB in bytes for generous file uploads
     expose:
       - "8080"
     ports:
@@ -49,7 +50,8 @@ services:
       LOCAL_DIR: "/data/uploads"
       UPLOAD_TMP_DIR: "/data/uploads/tmp"
       ALWAYS_COPY_UPLOADS: "true"
-      NIP98_REQUIRED: "false"
+      NIP98_REQUIRED: "true"
+      MAX_FILE_SIZE: "524288000"  # 500MB in bytes for generous file uploads
     expose:
       - "3001"
     ports:

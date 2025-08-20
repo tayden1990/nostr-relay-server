@@ -172,12 +172,28 @@ app.get('/.well-known/nostr/nip96.json', (_req, res) => {
             download_url: `${baseUrl}/media`,
             supported_nips: [96, 98],
             tos_url: "",
-            content_types: ["image/jpeg", "image/png", "image/gif", "image/webp", "video/mp4", "video/webm", "audio/mp3", "audio/wav"],
+            content_types: [
+                // Images
+                "image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml", "image/bmp", "image/tiff",
+                // Videos
+                "video/mp4", "video/webm", "video/avi", "video/mov", "video/mkv", "video/flv", "video/wmv",
+                // Audio
+                "audio/mp3", "audio/wav", "audio/flac", "audio/aac", "audio/ogg", "audio/m4a",
+                // Documents
+                "application/pdf", "text/plain", "text/markdown", "text/csv",
+                "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                // Archives
+                "application/zip", "application/x-rar-compressed", "application/x-7z-compressed", "application/x-tar", "application/gzip",
+                // Other
+                "application/json", "application/xml", "text/xml", "text/html", "text/css", "text/javascript", "application/javascript"
+            ],
             plans: {
                 free: {
-                    name: "Free Tier",
-                    is_nip98_required: String(process.env.NIP98_REQUIRED || 'false').toLowerCase() === 'true',
-                    max_byte_size: Number(process.env.MAX_FILE_SIZE || 50 * 1024 * 1024),
+                    name: "Free Tier - Unlimited",
+                    is_nip98_required: false, // No authentication required for free usage
+                    max_byte_size: Number(process.env.MAX_FILE_SIZE || 500 * 1024 * 1024), // 500MB default instead of 50MB
                     file_expiration: [0, 0], // no expiration
                     media_transformations: {
                         image: ["resizing"]

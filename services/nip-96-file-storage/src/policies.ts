@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 
 // Policy for file size limits
 export const fileSizeLimitPolicy = (req: Request, res: Response, next: NextFunction) => {
-    const defaultMax = 10 * 1024 * 1024; // 10 MB
+    const defaultMax = 500 * 1024 * 1024; // 500 MB default (increased from 10MB)
     const envMax = process.env.MAX_FILE_SIZE ? Number(process.env.MAX_FILE_SIZE) : undefined;
     const maxSize = Number.isFinite(envMax) && (envMax as number) > 0 ? (envMax as number) : defaultMax;
 
@@ -16,9 +16,9 @@ export const fileSizeLimitPolicy = (req: Request, res: Response, next: NextFunct
     return next();
 };
 
-// Policy for file retention
+// Policy for file retention (more permissive - 1 year instead of 30 days)
 export const fileRetentionPolicy = (fileCreationDate: Date) => {
-    const retentionPeriod = 30 * 24 * 60 * 60 * 1000; // 30 days
+    const retentionPeriod = 365 * 24 * 60 * 60 * 1000; // 365 days (1 year) instead of 30 days
     const currentTime = new Date().getTime();
     if (currentTime - fileCreationDate.getTime() > retentionPeriod) {
         return false; // File is expired
